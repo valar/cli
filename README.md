@@ -4,7 +4,7 @@ This repository contains the command line interface for Valar.
 
 ## Configuration
 
-The API and Invoke authentication token can be supplied either via environment variable `VALAR_API_TOKEN` or via flag `--api-token`.
+The API and Invoke authentication token can be supplied either via environment variable `VALAR_TOKEN` or via flag `--api-token`. The Valar endpoint URL has to be supplied via environment variable `VALAR_ENDPOINT` or via flag `--api-endpoint`.
 
 ## Usage
 
