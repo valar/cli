@@ -1,6 +1,6 @@
 # valar-cli
 
-This repository contains the command line interface for Valar Cloud.
+This repository contains the command line interface for Valar.
 
 ## Configuration
 
