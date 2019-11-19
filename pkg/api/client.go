@@ -27,9 +27,9 @@ type Client struct {
 func (client *Client) error(clientErr error, body []byte) error {
 	serverErr := Error{}
 	if err := json.Unmarshal(body, &serverErr); err != nil {
-		return clientErr
+		return fmt.Errorf("client: %w", clientErr)
 	}
-	return serverErr
+	return fmt.Errorf("server: %w", serverErr)
 }
 
 func (client *Client) request(method, path string, obj interface{}, post io.Reader) error {
@@ -40,12 +40,12 @@ func (client *Client) request(method, path string, obj interface{}, post io.Read
 	req.Header.Add("Authorization", "Bearer "+client.Token)
 	resp, err := client.http.Do(req)
 	if err != nil {
-		return err
+		return fmt.Errorf("submitting request: %w", err)
 	}
 	defer resp.Body.Close()
 	body, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		return err
+		return fmt.Errorf("fetching request: %w", err)
 	}
 	if err := json.Unmarshal(body, obj); err != nil {
 		return client.error(err, body)

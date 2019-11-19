@@ -37,7 +37,7 @@ var buildCmd = &cobra.Command{
 func buildListAll(client *api.Client, cfg *config.Config) {
 	tasks, err := client.ListBuilds(cfg.Project, cfg.Function)
 	if err != nil {
-		fmt.Println(err)
+		fmt.Fprintln(os.Stderr, "Listing builds:", err)
 		return
 	}
 	// Sort by date
@@ -59,7 +59,7 @@ func buildListAll(client *api.Client, cfg *config.Config) {
 func buildListOne(client *api.Client, cfg *config.Config, id string) {
 	task, err := client.GetBuild(cfg.Project, cfg.Function, id)
 	if err != nil {
-		fmt.Println(err)
+		fmt.Fprintln(os.Stderr, "Retrieving build:", err)
 		return
 	}
 	tw := tabwriter.NewWriter(os.Stdout, 0, 0, 1, ' ', 0)

@@ -3,16 +3,16 @@ package cmd
 import (
 	"fmt"
 	"os"
-	"path/filepath"
 	"valar/cli/pkg/api"
 	"valar/cli/pkg/config"
+	"valar/cli/pkg/util"
 
-	"github.com/mholt/archiver/v3"
 	"github.com/spf13/cobra"
 )
 
 const functionConfiguration = ".valar.yml"
 
+var initIgnore []string
 var initEnv, initProject string
 var initForce bool
 
@@ -22,52 +22,66 @@ var initCmd = &cobra.Command{
 	Args:  cobra.ExactArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
 		cfg := &config.Config{
+			Ignore:   initIgnore,
 			Project:  initProject,
 			Function: args[0],
 		}
 		cfg.Environment.Name = initEnv
 		if _, err := os.Stat(functionConfiguration); err == nil && !initForce {
-			fmt.Println("Configuration already exists, please use --force flag to override")
+			fmt.Fprintln(os.Stderr, "Configuration already exists, please use --force flag to override")
+			os.Exit(1)
 			return
 		}
 		if err := cfg.WriteToFile(functionConfiguration); err != nil {
-			fmt.Println(err)
+			fmt.Fprintln(os.Stderr, "Configuration write failed:", err)
+			os.Exit(1)
+			return
 		}
 	},
 }
 
+func pushFolder(cfg *config.Config, folder string) (*api.Task, error) {
+	archivePath, err := util.CompressDir(folder, cfg.Ignore)
+	if err != nil {
+		return nil, fmt.Errorf("package compression failed: %w", err)
+	}
+	defer os.Remove(archivePath)
+	targzFile, err := os.Open(archivePath)
+	if err != nil {
+		return nil, fmt.Errorf("package archive failed: %w", err)
+	}
+	defer targzFile.Close()
+	client := api.NewClient(endpoint, token)
+	task, err := client.SubmitBuild(cfg.Project, cfg.Function, cfg.Environment.Name, targzFile)
+	if err != nil {
+		return nil, fmt.Errorf("build submit: %w", err)
+	}
+	return task, nil
+}
+
 var pushCmd = &cobra.Command{
-	Use:   "push",
+	Use:   "push [folder]",
 	Short: "Push a new version to Valar",
-	Args:  cobra.ExactArgs(0),
+	Args:  cobra.MaximumNArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
 		// Load configuration
 		cfg := &config.Config{}
 		if err := cfg.ReadFromFile(functionConfiguration); err != nil {
-			fmt.Println("Missing configuration, please set up your folder using valar init")
-			return
+			fmt.Fprintln(os.Stderr, "Missing configuration, please set up your folder using valar init")
+			os.Exit(1)
 		}
-		// TODO: Stream to http writer
-		// Generate source pkg
-		tmppath := filepath.Join(os.TempDir(), "valar."+cfg.Project+"."+cfg.Function+".tar.gz")
-		targz := archiver.NewTarGz()
-		if err := targz.Archive([]string{"."}, tmppath); err != nil {
-			fmt.Println("The package compression failed, please try again")
-			return
-		}
-		defer os.Remove(tmppath)
-		targzFile, err := os.Open(tmppath)
+		folder, err := os.Getwd()
 		if err != nil {
-			fmt.Println("The package compression failed, please try again")
-			return
+			fmt.Fprintln(os.Stderr, "Locating working directory:", err)
+			os.Exit(1)
 		}
-		defer targzFile.Close()
-		// Connect to server
-		client := api.NewClient(endpoint, token)
-		task, err := client.SubmitBuild(cfg.Project, cfg.Function, cfg.Environment.Name, targzFile)
+		if len(args) != 0 {
+			folder = args[0]
+		}
+		task, err := pushFolder(cfg, folder)
 		if err != nil {
-			fmt.Println(err)
-			return
+			fmt.Fprintln(os.Stderr, "Pushing folder:", err)
+			os.Exit(1)
 		}
 		fmt.Println(task.ID)
 	},
@@ -75,10 +89,11 @@ var pushCmd = &cobra.Command{
 
 func init() {
 	initPf := initCmd.PersistentFlags()
-	initPf.StringVarP(&initEnv, "env", "e", "", "build constructor environment")
+	initPf.StringArrayVarP(&initIgnore, "ignore", "i", []string{".valar.yml", ".git", "node_modules"}, "ignore files")
+	initPf.StringVarP(&initEnv, "type", "t", "", "build constructor type")
 	initPf.StringVarP(&initProject, "project", "p", "", "project name")
 	initPf.BoolVarP(&initForce, "force", "f", false, "allow configuration override")
-	cobra.MarkFlagRequired(initPf, "env")
+	cobra.MarkFlagRequired(initPf, "type")
 	cobra.MarkFlagRequired(initPf, "project")
 
 	rootCmd.AddCommand(initCmd)

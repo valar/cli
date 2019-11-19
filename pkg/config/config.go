@@ -13,6 +13,7 @@ type Config struct {
 	Environment struct {
 		Name string `yaml:"name"`
 	} `yaml:"environment"`
+	Ignore []string `yaml:"ignore"`
 }
 
 func (config *Config) ReadFromFile(path string) error {
