@@ -37,8 +37,10 @@ valar alias [service] [my-alias]
 ```bash
 # Listing all builds
 valar build
-# Viewing a specific build
-valar build [taskid]
+# Listing all builds with the given prefix
+valar build [prefix]
+# Inspecting a build
+valar build inspect [prefix]
 # Abort a specific build
 valar build --abort [taskid]
 ```
