@@ -27,7 +27,7 @@ type Client struct {
 func (client *Client) error(clientErr error, body []byte) error {
 	serverErr := Error{}
 	if err := json.Unmarshal(body, &serverErr); err != nil {
-		return fmt.Errorf("client: %w", clientErr)
+		return fmt.Errorf("client: %w: %v", clientErr, string(body))
 	}
 	return fmt.Errorf("server: %w", serverErr)
 }
@@ -66,10 +66,10 @@ func (client *Client) SubmitBuild(project, function, constructor string, archive
 }
 
 // GetBuild retrieves a specific build task.
-func (client *Client) GetBuild(project, function, id string) (*Task, error) {
+func (client *Client) InspectBuild(project, function, id string) (*Task, error) {
 	var (
 		task Task
-		path = fmt.Sprintf("/%s/%s/build/%s", project, function, id)
+		path = fmt.Sprintf("/%s/%s/build/%s/inspect", project, function, id)
 	)
 	if err := client.request(http.MethodGet, path, &task, nil); err != nil {
 		return nil, err
@@ -78,10 +78,10 @@ func (client *Client) GetBuild(project, function, id string) (*Task, error) {
 }
 
 // ListBuilds retrieves all builds for a specific service.
-func (client *Client) ListBuilds(project, function string) ([]Task, error) {
+func (client *Client) ListBuilds(project, function, id string) ([]Task, error) {
 	var (
 		tasks []Task
-		path  = fmt.Sprintf("/%s/%s/build", project, function)
+		path  = fmt.Sprintf("/%s/%s/build/%s", project, function, id)
 	)
 	if err := client.request(http.MethodGet, path, &tasks, nil); err != nil {
 		return nil, err
@@ -96,7 +96,7 @@ type Task struct {
 	Domain  string    `json:"domain"`
 	Created time.Time `json:"created"`
 	Logs    string    `json:"logs"`
-	Err     error     `json:"error"`
+	Err     string    `json:"error"`
 }
 
 func NewClient(endpoint, token string) *Client {

@@ -16,8 +16,8 @@ import (
 var buildAbort bool
 
 var buildCmd = &cobra.Command{
-	Use:   "build [taskid]",
-	Short: "List or inspect builds",
+	Use:   "build [prefix]",
+	Short: "List builds with the given ID prefix",
 	Args:  cobra.MaximumNArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
 		cfg := &config.Config{}
@@ -26,16 +26,30 @@ var buildCmd = &cobra.Command{
 			return
 		}
 		client := api.NewClient(endpoint, token)
-		if len(args) == 0 {
-			buildListAll(client, cfg)
-		} else {
-			buildListOne(client, cfg, args[0])
+		if len(args) < 1 {
+			args = append(args, "")
 		}
+		listBuilds(client, cfg, args[0])
 	},
 }
 
-func buildListAll(client *api.Client, cfg *config.Config) {
-	tasks, err := client.ListBuilds(cfg.Project, cfg.Function)
+var inspectCmd = &cobra.Command{
+	Use:   "inspect [prefix]",
+	Short: "Inspect the first matched build with the given ID prefix",
+	Args:  cobra.ExactArgs(1),
+	Run: func(cmd *cobra.Command, args []string) {
+		cfg := &config.Config{}
+		if err := cfg.ReadFromFile(functionConfiguration); err != nil {
+			fmt.Println("Missing configuration, please run `valar init` first")
+			return
+		}
+		client := api.NewClient(endpoint, token)
+		inspectBuild(client, cfg, args[0])
+	},
+}
+
+func listBuilds(client *api.Client, cfg *config.Config, id string) {
+	tasks, err := client.ListBuilds(cfg.Project, cfg.Function, id)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "Listing builds:", err)
 		return
@@ -56,8 +70,8 @@ func buildListAll(client *api.Client, cfg *config.Config) {
 	tw.Flush()
 }
 
-func buildListOne(client *api.Client, cfg *config.Config, id string) {
-	task, err := client.GetBuild(cfg.Project, cfg.Function, id)
+func inspectBuild(client *api.Client, cfg *config.Config, id string) {
+	task, err := client.InspectBuild(cfg.Project, cfg.Function, id)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "Retrieving build:", err)
 		return
@@ -68,7 +82,7 @@ func buildListOne(client *api.Client, cfg *config.Config, id string) {
 	fmt.Fprintln(tw, "Created:\t", task.Created)
 	fmt.Fprintln(tw, "Status:\t", task.Status)
 	fmt.Fprintln(tw, "Domain:\t", task.Domain)
-	if task.Err != nil {
+	if task.Err != "" {
 		fmt.Fprintln(tw, "Err:\t", task.Err)
 	}
 	tw.Flush()
@@ -80,5 +94,6 @@ func buildListOne(client *api.Client, cfg *config.Config, id string) {
 
 func init() {
 	buildCmd.PersistentFlags().BoolVarP(&buildAbort, "abort", "a", false, "abort the build")
+	buildCmd.AddCommand(inspectCmd)
 	rootCmd.AddCommand(buildCmd)
 }
