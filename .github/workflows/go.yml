@@ -15,17 +15,16 @@ jobs:
       with:
         go-version: 1.13
       id: go
-
     - name: Check out code into the Go module directory
       uses: actions/checkout@v1
-
     - name: Get dependencies
       run: |
         go get -v -t -d ./...
-
     - name: Build
-      run: go build -v .
-      
+      run: |
+        CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -a -tags netgo -ldflags '-w -extldflags "-static"' -o valar_linux_amd64 .
+        CGO_ENABLED=0 GOOS=linux GOARCH=arm go build -a -tags netgo -ldflags '-w -extldflags "-static"' -o valar_linux_arm .
+        CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build -a -tags netgo -ldflags '-w -extldflags "-static"' -o valar_darwin_amd64 .
     - name: Create Release
       id: create_release
       uses: actions/create-release@v1
@@ -36,14 +35,33 @@ jobs:
         release_name: ${{ github.ref }}
         draft: false
         prerelease: false
-        
-    - name: Upload Release Asset
+    - name: Upload release asset (linux_amd64)
       id: upload-release-asset 
       uses: actions/upload-release-asset@v1.0.1
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
         upload_url: ${{ steps.create_release.outputs.upload_url }}
-        asset_path: ./cli
-        asset_name: valar-cli
+        asset_path: ./valar_linux_amd64
+        asset_name: valar_linux_amd64
+        asset_content_type: binary/octet-stream
+    - name: Upload release asset (linux_arm)
+      id: upload-release-asset 
+      uses: actions/upload-release-asset@v1.0.1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ steps.create_release.outputs.upload_url }}
+        asset_path: ./valar_linux_arm
+        asset_name: valar_linux_arm
+        asset_content_type: binary/octet-stream
+    - name: Upload release asset (darwin_amd64)
+      id: upload-release-asset 
+      uses: actions/upload-release-asset@v1.0.1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ steps.create_release.outputs.upload_url }}
+        asset_path: ./valar_darwin_amd64
+        asset_name: valar_darwin_amd64
         asset_content_type: binary/octet-stream
