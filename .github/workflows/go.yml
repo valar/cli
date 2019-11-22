@@ -36,7 +36,7 @@ jobs:
         draft: false
         prerelease: false
     - name: Upload release asset (linux_amd64)
-      id: upload-release-asset 
+      id: upload-release-asset-linux-amd64
       uses: actions/upload-release-asset@v1.0.1
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -46,7 +46,7 @@ jobs:
         asset_name: valar_linux_amd64
         asset_content_type: binary/octet-stream
     - name: Upload release asset (linux_arm)
-      id: upload-release-asset 
+      id: upload-release-asset-linux-arm
       uses: actions/upload-release-asset@v1.0.1
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -56,7 +56,7 @@ jobs:
         asset_name: valar_linux_arm
         asset_content_type: binary/octet-stream
     - name: Upload release asset (darwin_amd64)
-      id: upload-release-asset 
+      id: upload-release-asset-darwin-amd64
       uses: actions/upload-release-asset@v1.0.1
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
