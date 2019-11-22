@@ -19,7 +19,7 @@ valar destroy [my-project]
 ### Services
 ```bash
 # Create local configuration
-valar init --env=[my-constructor] --project=[my-project] [my-function]
+valar init --type=[my-constructor] --project=[my-project] [my-function]
 # Deploying a service
 valar push
 # Listing all services
