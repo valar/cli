@@ -8,8 +8,9 @@ import (
 	"github.com/spf13/viper"
 )
 
+var version string
+var project string
 var token, endpoint string
-var version = "v0.0.0"
 
 var rootCmd = &cobra.Command{
 	Use:   "valar",
@@ -20,7 +21,6 @@ You code. We do the rest.
 We take care
 while you do
 what you do best.`,
-	Version: version,
 }
 
 func init() {
@@ -33,6 +33,8 @@ func init() {
 	viper.AutomaticEnv()
 	rootCmd.PersistentFlags().StringVar(&token, "api-token", viper.GetString("token"), "Valar API token")
 	rootCmd.PersistentFlags().StringVar(&endpoint, "api-endpoint", viper.GetString("endpoint"), "Valar API endpoint")
+	rootCmd.SetVersionTemplate("Valar CLI {{.Version}}\n")
+	rootCmd.Version = version
 }
 
 func Execute() {
