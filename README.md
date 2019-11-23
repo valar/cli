@@ -10,48 +10,83 @@ The API and Invoke authentication token can be supplied either via environment v
 
 ### Projects
 
-```bash
-# Set up a new project
-valar create [--public] {my-project}
-# Destroy a project
-valar destroy [my-project]
+#### Set up a new project <span style="color: grey">(not implemented)</span>
 ```
+valar create [--public] [project-name]
+```
+> Public projects can be invoked by any anonymous person.
+#### Set the default project, endpoint and token <span style="color:grey">(not implemented)
+```
+valar use --project=[project-name] --api-token=[api-token] --api-endpoint=[api-endpoint]
+```
+#### Destroy a project <span style="color: grey">(not implemented)</span>
+```bash
+valar destroy [project-name]
+```
+> Destroying a project deletes all services and configuration associated with it. Use with care.
 ### Services
+#### Create local configuration <span style="color:green">(implemented)</span>
 ```bash
-# Create local configuration
-valar init --type=[my-constructor] --project=[my-project] [my-function]
-# Deploying a service
-valar push
-# Listing all services
-valar list
-# Listing all versions of a service
-valar list [service]
-# Reverse service to old version
-valar rollback [service] [versionid]
-# Delete a service
-valar delete [service]
-# Set up service alias
-valar alias [service] [my-alias]
+valar init --type=[constructor] --project=[project-name] [service]
 ```
-### Builds
+> Valar supports a variety of constructors. If you are looking for an up-to-date list, please refer to [the official documentation](https://docs.valar.dev).
+#### Deploying a service <span style="color:green">(implemented)</span>
 ```bash
-# Listing all builds
-valar build
-# Listing all builds with the given prefix
-valar build [prefix]
-# Inspecting a build
-valar build inspect [prefix]
-# Abort a specific build
-valar build --abort [taskid]
+valar push
+```
+#### Listing all services <span style="color: grey">(not implemented)</span>
+```bash
+valar list
+```
+#### Listing all versions of a service <span style="color: grey">(not implemented)</span>
+```bash
+valar list [service]
+```
+#### Reverse service to old version <span style="color: grey">(not implemented)</span>
+```bash
+valar rollback [service] [versionid]
+```
+#### Delete a service <span style="color: grey">(not implemented)</span>
+```bash
+valar delete [service]
+```
+#### Set up service alias <span style="color: grey">(not implemented)</span>
+```bash
+valar alias [service] [alias]
+```
+> The alias has to match either `(projectname)-(servicealias).valar.dev` or if you have set up your own domain, `(servicealias).(user-owned-domain)`.
+### Tasks
+A task can be of various types, including builds and rollbacks.
+#### Listing all tasks <span style="color:green">(implemented)</span>
+```bash
+valar tasks
+```
+#### Listing all tasks with the given prefix <span style="color:green">(implemented)</span>
+```bash
+valar tasks [prefix]
+```
+#### Inspecting a task <span style="color:green">(implemented)</span>
+```bash
+valar tasks inspect [prefix]
+```
+#### Abort a specific task <span style="color: grey">(not implemented)</span>
+```bash
+valar tasks --abort [taskid]
 ```
 ### Permissions
+#### View permissions <span style="color: grey">(not implemented)</span>
 ```bash
-# View permissions
 valar auth [service]
-# Allow somebody to read/write/invoke
+```
+#### Allow somebody to read/write/invoke <span style="color: grey">(not implemented)</span>
+```bash
 valar auth --allow [user]:[read|write|invoke] [service]
-# Disallow somebody to read/write/invoke
+```
+#### Disallow somebody to read/write/invoke <span style="color: grey">(not implemented)</span>
+```bash
 valar auth --forbid [user]:[read|write|invoke] [service]
-# Reset permissions to project default
+```
+#### Reset permissions to project default <span style="color: grey">(not implemented)</span>
+```bash
 valar auth --reset
 ```
