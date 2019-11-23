@@ -22,9 +22,10 @@ jobs:
         go get -v -t -d ./...
     - name: Build
       run: |
-        CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -a -tags netgo -ldflags '-X valar/cli/cmd.version=${{ github.ref }} -s -w -extldflags "-static"' -o valar_linux_amd64 .
-        CGO_ENABLED=0 GOOS=linux GOARCH=arm go build -a -tags netgo -ldflags '-X valar/cli/cmd.version=${{ github.ref }} -s -w -extldflags "-static"' -o valar_linux_arm .
-        CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build -a -tags netgo -ldflags '-X valar/cli/cmd.version=${{ github.ref }} -s -w -extldflags "-static"' -o valar_darwin_amd64 .
+        export VALAR_VERSION=$(basename ${{ github.ref }})
+        CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -a -tags netgo -ldflags '-X valar/cli/cmd.version=$VALAR_VERSION -s -w -extldflags "-static"' -o valar_linux_amd64 .
+        CGO_ENABLED=0 GOOS=linux GOARCH=arm go build -a -tags netgo -ldflags '-X valar/cli/cmd.version=$VALAR_VERSION -s -w -extldflags "-static"' -o valar_linux_arm .
+        CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build -a -tags netgo -ldflags '-X valar/cli/cmd.version=$VALAR_VERSION -s -w -extldflags "-static"' -o valar_darwin_amd64 .
     - name: Create Release
       id: create_release
       uses: actions/create-release@v1
