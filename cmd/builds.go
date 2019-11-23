@@ -13,11 +13,11 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var buildAbort bool
+var taskAbort bool
 
-var buildCmd = &cobra.Command{
-	Use:   "build [prefix]",
-	Short: "List builds with the given ID prefix",
+var taskCmd = &cobra.Command{
+	Use:   "tasks [prefix]",
+	Short: "List tasks with the given ID prefix",
 	Args:  cobra.MaximumNArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
 		cfg := &config.Config{}
@@ -29,13 +29,13 @@ var buildCmd = &cobra.Command{
 		if len(args) < 1 {
 			args = append(args, "")
 		}
-		listBuilds(client, cfg, args[0])
+		listTasks(client, cfg, args[0])
 	},
 }
 
 var inspectCmd = &cobra.Command{
 	Use:   "inspect [prefix]",
-	Short: "Inspect the first matched build with the given ID prefix",
+	Short: "Inspect the first matched task with the given ID prefix",
 	Args:  cobra.ExactArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
 		cfg := &config.Config{}
@@ -44,14 +44,14 @@ var inspectCmd = &cobra.Command{
 			return
 		}
 		client := api.NewClient(endpoint, token)
-		inspectBuild(client, cfg, args[0])
+		inspectTask(client, cfg, args[0])
 	},
 }
 
-func listBuilds(client *api.Client, cfg *config.Config, id string) {
-	tasks, err := client.ListBuilds(cfg.Project, cfg.Function, id)
+func listTasks(client *api.Client, cfg *config.Config, id string) {
+	tasks, err := client.ListTasks(cfg.Project, cfg.Function, id)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "Listing builds:", err)
+		fmt.Fprintln(os.Stderr, "Listing tasks:", err)
 		return
 	}
 	// Sort by date
@@ -70,8 +70,8 @@ func listBuilds(client *api.Client, cfg *config.Config, id string) {
 	tw.Flush()
 }
 
-func inspectBuild(client *api.Client, cfg *config.Config, id string) {
-	task, err := client.InspectBuild(cfg.Project, cfg.Function, id)
+func inspectTask(client *api.Client, cfg *config.Config, id string) {
+	task, err := client.InspectTask(cfg.Project, cfg.Function, id)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "Retrieving build:", err)
 		return
@@ -93,7 +93,7 @@ func inspectBuild(client *api.Client, cfg *config.Config, id string) {
 }
 
 func init() {
-	buildCmd.PersistentFlags().BoolVarP(&buildAbort, "abort", "a", false, "abort the build")
-	buildCmd.AddCommand(inspectCmd)
-	rootCmd.AddCommand(buildCmd)
+	taskCmd.PersistentFlags().BoolVarP(&taskAbort, "abort", "a", false, "abort the build")
+	taskCmd.AddCommand(inspectCmd)
+	rootCmd.AddCommand(taskCmd)
 }
