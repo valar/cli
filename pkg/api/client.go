@@ -57,7 +57,7 @@ func (client *Client) request(method, path string, obj interface{}, post io.Read
 func (client *Client) SubmitBuild(project, function, constructor string, archive io.ReadCloser) (*Task, error) {
 	var (
 		task Task
-		path = fmt.Sprintf("/%s/%s/build?env=%s", project, function, constructor)
+		path = fmt.Sprintf("/v0/%s/%s/build?env=%s", project, function, constructor)
 	)
 	if err := client.request(http.MethodPost, path, &task, archive); err != nil {
 		return nil, err
@@ -69,7 +69,7 @@ func (client *Client) SubmitBuild(project, function, constructor string, archive
 func (client *Client) InspectTask(project, service, id string) (*Task, error) {
 	var (
 		task Task
-		path = fmt.Sprintf("/%s/%s/task/%s/inspect", project, service, id)
+		path = fmt.Sprintf("/v0/%s/%s/task/%s/inspect", project, service, id)
 	)
 	if err := client.request(http.MethodGet, path, &task, nil); err != nil {
 		return nil, err
@@ -81,7 +81,7 @@ func (client *Client) InspectTask(project, service, id string) (*Task, error) {
 func (client *Client) ListTasks(project, service, id string) ([]Task, error) {
 	var (
 		tasks []Task
-		path  = fmt.Sprintf("/%s/%s/task/%s", project, service, id)
+		path  = fmt.Sprintf("/v0/%s/%s/task/%s", project, service, id)
 	)
 	if err := client.request(http.MethodGet, path, &tasks, nil); err != nil {
 		return nil, err
