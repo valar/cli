@@ -16,7 +16,7 @@ import (
 var taskAbort bool
 
 var taskCmd = &cobra.Command{
-	Use:   "tasks [prefix]",
+	Use:   "task [prefix]",
 	Short: "List tasks with the given ID prefix",
 	Args:  cobra.MaximumNArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
@@ -33,6 +33,27 @@ var taskCmd = &cobra.Command{
 	},
 }
 
+var logsFollow = false
+
+var logsCmd = &cobra.Command{
+	Use:   "logs [task]",
+	Short: "Show the build logs of the given task",
+	Args:  cobra.ExactArgs(1),
+	Run: func(cmd *cobra.Command, args []string) {
+		cfg := &config.Config{}
+		if err := cfg.ReadFromFile(functionConfiguration); err != nil {
+			fmt.Println("Missing configuration, please run `valar init` first")
+			return
+		}
+		client := api.NewClient(endpoint, token)
+		if logsFollow {
+			streamLogs(client, cfg, args[0])
+		} else {
+			showLogs(client, cfg, args[0])
+		}
+	},
+}
+
 var inspectCmd = &cobra.Command{
 	Use:   "inspect [prefix]",
 	Short: "Inspect the first matched task with the given ID prefix",
@@ -46,6 +67,20 @@ var inspectCmd = &cobra.Command{
 		client := api.NewClient(endpoint, token)
 		inspectTask(client, cfg, args[0])
 	},
+}
+
+func streamLogs(client *api.Client, cfg *config.Config, id string) {
+	if err := client.StreamLogs(cfg.Project, cfg.Function, id, os.Stdout); err != nil {
+		fmt.Fprintln(os.Stderr, "Streaming logs:", err)
+		return
+	}
+}
+
+func showLogs(client *api.Client, cfg *config.Config, id string) {
+	if err := client.ShowLogs(cfg.Project, cfg.Function, id, os.Stdout); err != nil {
+		fmt.Fprintln(os.Stderr, "Showing logs:", err)
+		return
+	}
 }
 
 func listTasks(client *api.Client, cfg *config.Config, id string) {
@@ -94,6 +129,8 @@ func inspectTask(client *api.Client, cfg *config.Config, id string) {
 
 func init() {
 	taskCmd.PersistentFlags().BoolVarP(&taskAbort, "abort", "a", false, "abort the build")
+	logsCmd.PersistentFlags().BoolVarP(&logsFollow, "follow", "f", false, "follow the logs")
 	taskCmd.AddCommand(inspectCmd)
+	taskCmd.AddCommand(logsCmd)
 	rootCmd.AddCommand(taskCmd)
 }

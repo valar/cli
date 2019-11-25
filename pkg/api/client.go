@@ -32,6 +32,23 @@ func (client *Client) error(clientErr error, body []byte) error {
 	return fmt.Errorf("server: %w", serverErr)
 }
 
+func (client *Client) streamRequest(method, path string, w io.Writer) error {
+	req, err := http.NewRequest(method, client.Endpoint+path, nil)
+	if err != nil {
+		return fmt.Errorf("client request: %w", err)
+	}
+	req.Header.Add("Authorization", "Bearer "+client.Token)
+	resp, err := client.http.Do(req)
+	if err != nil {
+		return fmt.Errorf("submitting request: %w", err)
+	}
+	defer resp.Body.Close()
+	if _, err := io.Copy(w, resp.Body); err != nil && err != io.EOF {
+		return fmt.Errorf("copying request: %w", err)
+	}
+	return nil
+}
+
 func (client *Client) request(method, path string, obj interface{}, post io.Reader) error {
 	req, err := http.NewRequest(method, client.Endpoint+path, post)
 	if err != nil {
@@ -63,6 +80,27 @@ func (client *Client) SubmitBuild(project, function, constructor string, archive
 		return nil, err
 	}
 	return &task, nil
+}
+
+// GetBuild retrieves a specific build task.
+func (client *Client) ShowLogs(project, service, id string, w io.Writer) error {
+	var (
+		path = fmt.Sprintf("/%s/%s/tasks/%s/logs", project, service, id)
+	)
+	if err := client.streamRequest(http.MethodGet, path, w); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (client *Client) StreamLogs(project, service, id string, w io.Writer) error {
+	var (
+		path = fmt.Sprintf("/%s/%s/tasks/%s/logs?follow=true", project, service, id)
+	)
+	if err := client.streamRequest(http.MethodGet, path, w); err != nil {
+		return err
+	}
+	return nil
 }
 
 // GetBuild retrieves a specific build task.
