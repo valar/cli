@@ -59,19 +59,23 @@ valar alias [service] [alias]
 A task can be of various types, including builds and rollbacks.
 #### Listing all tasks <span style="color:green">(implemented)</span>
 ```bash
-valar tasks
+valar task
 ```
 #### Listing all tasks with the given prefix <span style="color:green">(implemented)</span>
 ```bash
-valar tasks [prefix]
+valar task [prefix]
 ```
 #### Inspecting a task <span style="color:green">(implemented)</span>
 ```bash
-valar tasks inspect [prefix]
+valar task inspect [prefix]
 ```
 #### Abort a specific task <span style="color: grey">(not implemented)</span>
 ```bash
-valar tasks --abort [taskid]
+valar task --abort [taskid]
+```
+#### Show logs from task <span style="color:green">(implemented)</span>
+```bash
+valar task logs [--follow] [taskid]
 ```
 ### Permissions
 #### View permissions <span style="color: grey">(not implemented)</span>
