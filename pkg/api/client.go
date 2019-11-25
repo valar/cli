@@ -70,6 +70,40 @@ func (client *Client) request(method, path string, obj interface{}, post io.Read
 	return nil
 }
 
+// ListServices returns a list of all services in the project with the given prefix.
+func (client *Client) ListServices(project, service string) ([]Service, error) {
+	var (
+		services []Service
+		path     = fmt.Sprintf("/%s/%s", project, service)
+	)
+	if err := client.request(http.MethodGet, path, &services, nil); err != nil {
+		return nil, err
+	}
+	return services, nil
+}
+
+// ShowServiceLogs fetches the up-to-date logs of the latest service endpoint.
+func (client *Client) ShowServiceLogs(project, service string, w io.Writer) error {
+	var (
+		path = fmt.Sprintf("/%s/%s/logs", project, service)
+	)
+	if err := client.streamRequest(http.MethodGet, path, w); err != nil {
+		return err
+	}
+	return nil
+}
+
+// StreamServiceLogs streams the logs of the latest service endpoint.
+func (client *Client) StreamServiceLogs(project, service string, w io.Writer) error {
+	var (
+		path = fmt.Sprintf("/%s/%s/logs?follow=true", project, service)
+	)
+	if err := client.streamRequest(http.MethodGet, path, w); err != nil {
+		return err
+	}
+	return nil
+}
+
 // SubmitBuild submits a new build task to the server.
 func (client *Client) SubmitBuild(project, function, constructor string, archive io.ReadCloser) (*Task, error) {
 	var (
@@ -83,7 +117,7 @@ func (client *Client) SubmitBuild(project, function, constructor string, archive
 }
 
 // GetBuild retrieves a specific build task.
-func (client *Client) ShowLogs(project, service, id string, w io.Writer) error {
+func (client *Client) ShowTaskLogs(project, service, id string, w io.Writer) error {
 	var (
 		path = fmt.Sprintf("/%s/%s/tasks/%s/logs", project, service, id)
 	)
@@ -93,7 +127,7 @@ func (client *Client) ShowLogs(project, service, id string, w io.Writer) error {
 	return nil
 }
 
-func (client *Client) StreamLogs(project, service, id string, w io.Writer) error {
+func (client *Client) StreamTaskLogs(project, service, id string, w io.Writer) error {
 	var (
 		path = fmt.Sprintf("/%s/%s/tasks/%s/logs?follow=true", project, service, id)
 	)
@@ -125,6 +159,12 @@ func (client *Client) ListTasks(project, service, id string) ([]Task, error) {
 		return nil, err
 	}
 	return tasks, nil
+}
+
+type Service struct {
+	ID      string `json:"id"`
+	Label   string `json:"label"`
+	Version string `json:"version"`
 }
 
 type Task struct {

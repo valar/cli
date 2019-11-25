@@ -35,7 +35,7 @@ var taskCmd = &cobra.Command{
 
 var logsFollow = false
 
-var logsCmd = &cobra.Command{
+var buildLogsCmd = &cobra.Command{
 	Use:   "logs [task]",
 	Short: "Show the build logs of the given task",
 	Args:  cobra.ExactArgs(1),
@@ -47,9 +47,9 @@ var logsCmd = &cobra.Command{
 		}
 		client := api.NewClient(endpoint, token)
 		if logsFollow {
-			streamLogs(client, cfg, args[0])
+			streamBuildLogs(client, cfg, args[0])
 		} else {
-			showLogs(client, cfg, args[0])
+			showBuildLogs(client, cfg, args[0])
 		}
 	},
 }
@@ -69,15 +69,15 @@ var inspectCmd = &cobra.Command{
 	},
 }
 
-func streamLogs(client *api.Client, cfg *config.Config, id string) {
-	if err := client.StreamLogs(cfg.Project, cfg.Function, id, os.Stdout); err != nil {
+func streamBuildLogs(client *api.Client, cfg *config.Config, id string) {
+	if err := client.StreamTaskLogs(cfg.Project, cfg.Function, id, os.Stdout); err != nil {
 		fmt.Fprintln(os.Stderr, "Streaming logs:", err)
 		return
 	}
 }
 
-func showLogs(client *api.Client, cfg *config.Config, id string) {
-	if err := client.ShowLogs(cfg.Project, cfg.Function, id, os.Stdout); err != nil {
+func showBuildLogs(client *api.Client, cfg *config.Config, id string) {
+	if err := client.ShowTaskLogs(cfg.Project, cfg.Function, id, os.Stdout); err != nil {
 		fmt.Fprintln(os.Stderr, "Showing logs:", err)
 		return
 	}
@@ -129,8 +129,8 @@ func inspectTask(client *api.Client, cfg *config.Config, id string) {
 
 func init() {
 	taskCmd.PersistentFlags().BoolVarP(&taskAbort, "abort", "a", false, "abort the build")
-	logsCmd.PersistentFlags().BoolVarP(&logsFollow, "follow", "f", false, "follow the logs")
+	buildLogsCmd.PersistentFlags().BoolVarP(&logsFollow, "follow", "f", false, "follow the logs")
 	taskCmd.AddCommand(inspectCmd)
-	taskCmd.AddCommand(logsCmd)
+	taskCmd.AddCommand(buildLogsCmd)
 	rootCmd.AddCommand(taskCmd)
 }

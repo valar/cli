@@ -34,13 +34,13 @@ valar init --type=[constructor] --project=[project-name] [service]
 ```bash
 valar push
 ```
-#### Listing all services <span style="color: grey">(not implemented)</span>
+#### Listing all services in the project <span style="color: grey">(not implemented)</span>
 ```bash
 valar list
 ```
-#### Listing all versions of a service <span style="color: grey">(not implemented)</span>
-```bash
-valar list [service]
+#### Show the logs of the latest service version <span style="color: green">(implemented)</span>
+```
+valar logs [service]
 ```
 #### Reverse service to old version <span style="color: grey">(not implemented)</span>
 ```bash

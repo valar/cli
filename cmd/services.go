@@ -3,6 +3,8 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"strings"
+	"text/tabwriter"
 	"valar/cli/pkg/api"
 	"valar/cli/pkg/config"
 	"valar/cli/pkg/util"
@@ -36,6 +38,67 @@ var initCmd = &cobra.Command{
 			fmt.Fprintln(os.Stderr, "Configuration write failed:", err)
 			os.Exit(1)
 			return
+		}
+	},
+}
+
+var listCmd = &cobra.Command{
+	Use:   "list [prefix]",
+	Short: "Show all services in the current project with the prefix",
+	Args:  cobra.MaximumNArgs(1),
+	Run: func(cmd *cobra.Command, args []string) {
+		cfg := &config.Config{}
+		if err := cfg.ReadFromFile(functionConfiguration); err != nil {
+			fmt.Println("Missing configuration, please run `valar init` first")
+			return
+		}
+		client := api.NewClient(endpoint, token)
+		prefix := ""
+		if len(args) == 1 {
+			prefix = args[0]
+		}
+		services, err := client.ListServices(cfg.Project, prefix)
+		if err != nil {
+			fmt.Fprintln(os.Stderr, "Listing services:", err)
+			return
+		}
+		tw := tabwriter.NewWriter(os.Stdout, 0, 0, 1, ' ', 0)
+		fmt.Fprintln(tw, "Label\tVersion\tTask")
+		for _, svc := range services {
+			fmt.Fprintln(tw, strings.Join([]string{
+				svc.Label,
+				svc.Version,
+				svc.ID,
+			}, "\t"))
+		}
+		tw.Flush()
+	},
+}
+
+var serviceLogsCmd = &cobra.Command{
+	Use:   "logs [service]",
+	Short: "Show the logs of the latest service version",
+	Args:  cobra.MaximumNArgs(1),
+	Run: func(cmd *cobra.Command, args []string) {
+		cfg := &config.Config{}
+		if err := cfg.ReadFromFile(functionConfiguration); err != nil {
+			fmt.Println("Missing configuration, please run `valar init` first")
+			return
+		}
+		client := api.NewClient(endpoint, token)
+		if len(args) == 1 {
+			cfg.Function = args[0]
+		}
+		if logsFollow {
+			if err := client.StreamServiceLogs(cfg.Project, cfg.Function, os.Stdout); err != nil {
+				fmt.Fprintln(os.Stderr, "Streaming logs:", err)
+				return
+			}
+		} else {
+			if err := client.ShowServiceLogs(cfg.Project, cfg.Function, os.Stdout); err != nil {
+				fmt.Fprintln(os.Stderr, "Showing logs:", err)
+				return
+			}
 		}
 	},
 }
@@ -95,7 +158,10 @@ func init() {
 	initPf.BoolVarP(&initForce, "force", "f", false, "allow configuration override")
 	cobra.MarkFlagRequired(initPf, "type")
 	cobra.MarkFlagRequired(initPf, "project")
+	serviceLogsCmd.PersistentFlags().BoolVarP(&logsFollow, "follow", "f", false, "follow logs")
 
+	rootCmd.AddCommand(listCmd)
+	rootCmd.AddCommand(serviceLogsCmd)
 	rootCmd.AddCommand(initCmd)
 	rootCmd.AddCommand(pushCmd)
 }
