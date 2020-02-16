@@ -116,7 +116,7 @@ func (client *Client) SubmitBuild(project, function, constructor string, archive
 	return &task, nil
 }
 
-// GetBuild retrieves a specific build task.
+// ShowTaskLogs retrieves a specific build task logs.
 func (client *Client) ShowTaskLogs(project, service, id string, w io.Writer) error {
 	var (
 		path = fmt.Sprintf("/%s/%s/tasks/%s/logs", project, service, id)
@@ -127,6 +127,7 @@ func (client *Client) ShowTaskLogs(project, service, id string, w io.Writer) err
 	return nil
 }
 
+// StreamTaskLogs streams the active build logs to stdout.
 func (client *Client) StreamTaskLogs(project, service, id string, w io.Writer) error {
 	var (
 		path = fmt.Sprintf("/%s/%s/tasks/%s/logs?follow=true", project, service, id)
@@ -137,7 +138,7 @@ func (client *Client) StreamTaskLogs(project, service, id string, w io.Writer) e
 	return nil
 }
 
-// GetBuild retrieves a specific build task.
+// InspectTask retrieves a specific build task.
 func (client *Client) InspectTask(project, service, id string) (*Task, error) {
 	var (
 		task Task
@@ -149,7 +150,7 @@ func (client *Client) InspectTask(project, service, id string) (*Task, error) {
 	return &task, nil
 }
 
-// ListBuilds retrieves all builds for a specific service.
+// ListTasks retrieves all builds for a specific service.
 func (client *Client) ListTasks(project, service, id string) ([]Task, error) {
 	var (
 		tasks []Task
@@ -177,6 +178,7 @@ type Task struct {
 	Err     string    `json:"error"`
 }
 
+// NewClient creates a new client instance.
 func NewClient(endpoint, token string) *Client {
 	return &Client{
 		Endpoint: endpoint,
