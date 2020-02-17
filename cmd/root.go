@@ -18,9 +18,7 @@ var rootCmd = &cobra.Command{
 	Long: `Valar is a next-generation serverless provider.
 
 You code. We do the rest.
-We take care
-while you do
-what you do best.`,
+We take care while you do what you do best.`,
 }
 
 func init() {
