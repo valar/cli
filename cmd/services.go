@@ -23,6 +23,11 @@ var initCmd = &cobra.Command{
 	Short: "Create a service configuration file",
 	Args:  cobra.ExactArgs(1),
 	Run: func(cmd *cobra.Command, args []string) {
+		if err := api.VerifyNames(initProject, args[0]); err != nil {
+			fmt.Fprintln(os.Stderr, "Bad naming scheme:", err)
+			os.Exit(1)
+			return
+		}
 		cfg := &config.Config{
 			Ignore:   initIgnore,
 			Project:  initProject,
