@@ -19,18 +19,17 @@ var taskCmd = &cobra.Command{
 	Use:   "task [prefix]",
 	Short: "List tasks with the given ID prefix",
 	Args:  cobra.MaximumNArgs(1),
-	Run: func(cmd *cobra.Command, args []string) {
+	Run: runAndHandle(func(cmd *cobra.Command, args []string) error {
 		cfg := &config.Config{}
 		if err := cfg.ReadFromFile(functionConfiguration); err != nil {
-			fmt.Println("Missing configuration, please run `valar init` first")
-			return
+			return err
 		}
 		client := api.NewClient(endpoint, token)
 		if len(args) < 1 {
 			args = append(args, "")
 		}
-		listTasks(client, cfg, args[0])
-	},
+		return listTasks(client, cfg, args[0])
+	}),
 }
 
 var logsFollow = false
@@ -39,55 +38,37 @@ var buildLogsCmd = &cobra.Command{
 	Use:   "logs [task]",
 	Short: "Show the build logs of the given task",
 	Args:  cobra.ExactArgs(1),
-	Run: func(cmd *cobra.Command, args []string) {
+	Run: runAndHandle(func(cmd *cobra.Command, args []string) error {
 		cfg := &config.Config{}
 		if err := cfg.ReadFromFile(functionConfiguration); err != nil {
-			fmt.Println("Missing configuration, please run `valar init` first")
-			return
+			return err
 		}
 		client := api.NewClient(endpoint, token)
 		if logsFollow {
-			streamBuildLogs(client, cfg, args[0])
-		} else {
-			showBuildLogs(client, cfg, args[0])
+			return client.StreamTaskLogs(cfg.Project, cfg.Function, args[0], os.Stdout)
 		}
-	},
+		return client.ShowTaskLogs(cfg.Project, cfg.Function, args[0], os.Stdout)
+	}),
 }
 
 var inspectCmd = &cobra.Command{
 	Use:   "inspect [prefix]",
 	Short: "Inspect the first matched task with the given ID prefix",
 	Args:  cobra.ExactArgs(1),
-	Run: func(cmd *cobra.Command, args []string) {
+	Run: runAndHandle(func(cmd *cobra.Command, args []string) error {
 		cfg := &config.Config{}
 		if err := cfg.ReadFromFile(functionConfiguration); err != nil {
-			fmt.Println("Missing configuration, please run `valar init` first")
-			return
+			return err
 		}
 		client := api.NewClient(endpoint, token)
-		inspectTask(client, cfg, args[0])
-	},
+		return inspectTask(client, cfg, args[0])
+	}),
 }
 
-func streamBuildLogs(client *api.Client, cfg *config.Config, id string) {
-	if err := client.StreamTaskLogs(cfg.Project, cfg.Function, id, os.Stdout); err != nil {
-		fmt.Fprintln(os.Stderr, "Streaming logs:", err)
-		return
-	}
-}
-
-func showBuildLogs(client *api.Client, cfg *config.Config, id string) {
-	if err := client.ShowTaskLogs(cfg.Project, cfg.Function, id, os.Stdout); err != nil {
-		fmt.Fprintln(os.Stderr, "Showing logs:", err)
-		return
-	}
-}
-
-func listTasks(client *api.Client, cfg *config.Config, id string) {
+func listTasks(client *api.Client, cfg *config.Config, id string) error {
 	tasks, err := client.ListTasks(cfg.Project, cfg.Function, id)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "Listing tasks:", err)
-		return
+		return err
 	}
 	// Sort by date
 	sort.Slice(tasks, func(i, j int) bool {
@@ -103,13 +84,13 @@ func listTasks(client *api.Client, cfg *config.Config, id string) {
 		}, "\t"))
 	}
 	tw.Flush()
+	return nil
 }
 
-func inspectTask(client *api.Client, cfg *config.Config, id string) {
+func inspectTask(client *api.Client, cfg *config.Config, id string) error {
 	task, err := client.InspectTask(cfg.Project, cfg.Function, id)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "Retrieving build:", err)
-		return
+		return err
 	}
 	tw := tabwriter.NewWriter(os.Stdout, 0, 0, 1, ' ', 0)
 	fmt.Fprintln(tw, "ID:\t", task.ID)
@@ -125,6 +106,7 @@ func inspectTask(client *api.Client, cfg *config.Config, id string) {
 		fmt.Println("Logs:")
 		fmt.Println(task.Logs)
 	}
+	return nil
 }
 
 func init() {
