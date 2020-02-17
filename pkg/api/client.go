@@ -64,8 +64,11 @@ func (client *Client) request(method, path string, obj interface{}, post io.Read
 	if err != nil {
 		return fmt.Errorf("fetching request: %w", err)
 	}
-	if err := json.Unmarshal(body, obj); err != nil {
+	if resp.StatusCode != http.StatusOK {
 		return client.error(err, body)
+	}
+	if err := json.Unmarshal(body, obj); err != nil {
+		return fmt.Errorf("unmarshalling response: %w", err)
 	}
 	return nil
 }
