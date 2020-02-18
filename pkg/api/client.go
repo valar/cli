@@ -33,6 +33,7 @@ func (client *Client) error(clientErr error, body []byte) error {
 }
 
 func (client *Client) streamRequest(method, path string, w io.Writer) error {
+	client.http.Timeout = 0
 	req, err := http.NewRequest(method, client.Endpoint+path, nil)
 	if err != nil {
 		return fmt.Errorf("client request: %w", err)
@@ -50,6 +51,7 @@ func (client *Client) streamRequest(method, path string, w io.Writer) error {
 }
 
 func (client *Client) request(method, path string, obj interface{}, post io.Reader) error {
+	client.http.Timeout = time.Minute
 	req, err := http.NewRequest(method, client.Endpoint+path, post)
 	if err != nil {
 		return fmt.Errorf("client request: %w", err)
