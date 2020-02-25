@@ -5,11 +5,13 @@ import (
 	"os"
 	"sort"
 	"strings"
-	"text/tabwriter"
+
 	"valar/cli/pkg/api"
 	"valar/cli/pkg/config"
 
 	"github.com/dustin/go-humanize"
+	"github.com/fatih/color"
+	"github.com/juju/ansiterm"
 	"github.com/spf13/cobra"
 )
 
@@ -74,12 +76,12 @@ func listTasks(client *api.Client, cfg *config.Config, id string) error {
 	sort.Slice(tasks, func(i, j int) bool {
 		return tasks[i].Created.Before(tasks[j].Created)
 	})
-	tw := tabwriter.NewWriter(os.Stdout, 0, 0, 1, ' ', 0)
+	tw := ansiterm.NewTabWriter(os.Stdout, 6, 0, 1, ' ', 0)
 	fmt.Fprintln(tw, "ID\tStatus\tCreated")
 	for _, t := range tasks {
 		fmt.Fprintln(tw, strings.Join([]string{
 			t.ID,
-			t.Status,
+			colorize(t.Status),
 			humanize.Time(t.Created),
 		}, "\t"))
 	}
@@ -92,11 +94,11 @@ func inspectTask(client *api.Client, cfg *config.Config, id string) error {
 	if err != nil {
 		return err
 	}
-	tw := tabwriter.NewWriter(os.Stdout, 0, 0, 1, ' ', 0)
+	tw := ansiterm.NewTabWriter(os.Stdout, 0, 0, 1, ' ', 0)
 	fmt.Fprintln(tw, "ID:\t", task.ID)
 	fmt.Fprintln(tw, "Label:\t", task.Label)
-	fmt.Fprintln(tw, "Created:\t", task.Created)
-	fmt.Fprintln(tw, "Status:\t", task.Status)
+	fmt.Fprintln(tw, "Created:\t", humanize.Time(task.Created))
+	fmt.Fprintln(tw, "Status:\t", colorize(task.Status))
 	fmt.Fprintln(tw, "Domain:\t", task.Domain)
 	if task.Err != "" {
 		fmt.Fprintln(tw, "Err:\t", task.Err)
@@ -107,6 +109,21 @@ func inspectTask(client *api.Client, cfg *config.Config, id string) error {
 		fmt.Println(task.Logs)
 	}
 	return nil
+}
+
+func colorize(status string) string {
+	switch status {
+	case "scheduled":
+		return color.HiYellowString("%s", status)
+	case "building", "releasing", "binding":
+		return color.YellowString("%s", status)
+	case "done":
+		return color.GreenString("%s", status)
+	case "failed":
+		return color.RedString("%s", status)
+	default:
+		return status
+	}
 }
 
 func init() {
