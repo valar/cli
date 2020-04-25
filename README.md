@@ -93,13 +93,13 @@ valar builds logs [--follow] [taskid]
 ```bash
 valar auth [service]
 ```
-#### Allow somebody to read/write/invoke <span style="color: green">(implemented)</span>
+#### Allow someone to read/write/invoke <span style="color: green">(implemented)</span>
 ```bash
-valar auth allow [user]:[read|write|invoke]
+valar auth allow --user [user] --action [read|write|invoke|manage]
 ```
-#### Disallow somebody to read/write/invoke <span style="color: green">(implemented)</span>
+#### Forbid someone to read/write/invoke <span style="color: green">(implemented)</span>
 ```bash
-valar auth forbid [user]:[read|write|invoke]
+valar auth forbid --user [user] --action [read|write|invoke|manage]
 ```
 #### Reset permissions to project default <span style="color: grey">(not implemented)</span>
 ```bash
