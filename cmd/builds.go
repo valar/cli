@@ -5,6 +5,7 @@ import (
 	"os"
 	"sort"
 	"strings"
+	"text/tabwriter"
 
 	"valar/cli/pkg/api"
 	"valar/cli/pkg/config"
@@ -15,22 +16,25 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var taskAbort bool
+var buildAbort bool
 
-var taskCmd = &cobra.Command{
-	Use:   "task [prefix]",
-	Short: "List tasks with the given ID prefix",
+var buildCmd = &cobra.Command{
+	Use:   "builds [prefix]",
+	Short: "List all builds",
 	Args:  cobra.MaximumNArgs(1),
 	Run: runAndHandle(func(cmd *cobra.Command, args []string) error {
 		cfg := &config.Config{}
 		if err := cfg.ReadFromFile(functionConfiguration); err != nil {
 			return err
 		}
-		client := api.NewClient(endpoint, token)
+		client, err := api.NewClient(endpoint, token)
+		if err != nil {
+			return err
+		}
 		if len(args) < 1 {
 			args = append(args, "")
 		}
-		return listTasks(client, cfg, args[0])
+		return listBuilds(client, cfg, args[0])
 	}),
 }
 
@@ -45,11 +49,14 @@ var buildLogsCmd = &cobra.Command{
 		if err := cfg.ReadFromFile(functionConfiguration); err != nil {
 			return err
 		}
-		client := api.NewClient(endpoint, token)
-		if logsFollow {
-			return client.StreamTaskLogs(cfg.Project, cfg.Function, args[0], os.Stdout)
+		client, err := api.NewClient(endpoint, token)
+		if err != nil {
+			return err
 		}
-		return client.ShowTaskLogs(cfg.Project, cfg.Function, args[0], os.Stdout)
+		if logsFollow {
+			return client.StreamBuildLogs(cfg.Project, cfg.Service, args[0], os.Stdout)
+		}
+		return client.ShowBuildLogs(cfg.Project, cfg.Service, args[0], os.Stdout)
 	}),
 }
 
@@ -62,52 +69,52 @@ var inspectCmd = &cobra.Command{
 		if err := cfg.ReadFromFile(functionConfiguration); err != nil {
 			return err
 		}
-		client := api.NewClient(endpoint, token)
-		return inspectTask(client, cfg, args[0])
+		client, err := api.NewClient(endpoint, token)
+		if err != nil {
+			return err
+		}
+		return inspectBuild(client, cfg, args[0])
 	}),
 }
 
-func listTasks(client *api.Client, cfg *config.Config, id string) error {
-	tasks, err := client.ListTasks(cfg.Project, cfg.Function, id)
+func listBuilds(client *api.Client, cfg *config.Config, id string) error {
+	builds, err := client.ListBuilds(cfg.Project, cfg.Service, id)
 	if err != nil {
 		return err
 	}
 	// Sort by date
-	sort.Slice(tasks, func(i, j int) bool {
-		return tasks[i].Created.Before(tasks[j].Created)
+	sort.Slice(builds, func(i, j int) bool {
+		return builds[i].CreatedAt.Before(builds[j].CreatedAt)
 	})
 	tw := ansiterm.NewTabWriter(os.Stdout, 6, 0, 1, ' ', 0)
 	fmt.Fprintln(tw, "ID\tStatus\tCreated")
-	for _, t := range tasks {
+	for _, b := range builds {
 		fmt.Fprintln(tw, strings.Join([]string{
-			t.ID,
-			colorize(t.Status),
-			humanize.Time(t.Created),
+			b.ID,
+			colorize(b.Status),
+			humanize.Time(b.CreatedAt),
 		}, "\t"))
 	}
 	tw.Flush()
 	return nil
 }
 
-func inspectTask(client *api.Client, cfg *config.Config, id string) error {
-	task, err := client.InspectTask(cfg.Project, cfg.Function, id)
+func inspectBuild(client *api.Client, cfg *config.Config, id string) error {
+	build, err := client.InspectBuild(cfg.Project, cfg.Service, id)
 	if err != nil {
 		return err
 	}
-	tw := ansiterm.NewTabWriter(os.Stdout, 0, 0, 1, ' ', 0)
-	fmt.Fprintln(tw, "ID:\t", task.ID)
-	fmt.Fprintln(tw, "Label:\t", task.Label)
-	fmt.Fprintln(tw, "Created:\t", humanize.Time(task.Created))
-	fmt.Fprintln(tw, "Status:\t", colorize(task.Status))
-	fmt.Fprintln(tw, "Domain:\t", task.Domain)
-	if task.Err != "" {
-		fmt.Fprintln(tw, "Err:\t", task.Err)
+	tw := tabwriter.NewWriter(os.Stdout, 0, 0, 1, ' ', 0)
+	fmt.Fprintln(tw, "ID:\t", build.ID)
+	fmt.Fprintln(tw, "Constructor:\t", build.Constructor)
+	fmt.Fprintln(tw, "CreatedAt:\t", build.CreatedAt)
+	fmt.Fprintln(tw, "Status:\t", colorize(build.Status))
+	fmt.Fprintln(tw, "Flags:\t", build.Flags)
+	fmt.Fprintln(tw, "Owner:\t", build.Owner)
+	if build.Err != "" {
+		fmt.Fprintln(tw, "Err:\t", build.Err)
 	}
 	tw.Flush()
-	if task.Logs != "" {
-		fmt.Println("Logs:")
-		fmt.Println(task.Logs)
-	}
 	return nil
 }
 
@@ -127,9 +134,9 @@ func colorize(status string) string {
 }
 
 func init() {
-	taskCmd.PersistentFlags().BoolVarP(&taskAbort, "abort", "a", false, "abort the build")
+	buildCmd.PersistentFlags().BoolVarP(&buildAbort, "abort", "a", false, "abort the build")
 	buildLogsCmd.PersistentFlags().BoolVarP(&logsFollow, "follow", "f", false, "follow the logs")
-	taskCmd.AddCommand(inspectCmd)
-	taskCmd.AddCommand(buildLogsCmd)
-	rootCmd.AddCommand(taskCmd)
+	buildCmd.AddCommand(inspectCmd)
+	buildCmd.AddCommand(buildLogsCmd)
+	rootCmd.AddCommand(buildCmd)
 }

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"log"
 	"net/http"
 	"time"
 )
@@ -22,6 +23,17 @@ type Client struct {
 	Token    string
 
 	http *http.Client
+}
+
+func (client *Client) check() error {
+	var resp struct {
+		Version string `json:"version"`
+	}
+	client.request(http.MethodGet, "/", &resp, nil)
+	if resp.Version != "v1" {
+		return fmt.Errorf("client requires endpoint v1")
+	}
+	return nil
 }
 
 func (client *Client) error(clientErr error, body []byte) error {
@@ -57,6 +69,7 @@ func (client *Client) request(method, path string, obj interface{}, post io.Read
 		return fmt.Errorf("client request: %w", err)
 	}
 	req.Header.Add("Authorization", "Bearer "+client.Token)
+	log.Println(method, req.URL)
 	resp, err := client.http.Do(req)
 	if err != nil {
 		return fmt.Errorf("submitting request: %w", err)
@@ -79,7 +92,7 @@ func (client *Client) request(method, path string, obj interface{}, post io.Read
 func (client *Client) ListServices(project, service string) ([]Service, error) {
 	var (
 		services []Service
-		path     = fmt.Sprintf("/%s/%s", project, service)
+		path     = fmt.Sprintf("/projects/%s/services/%s", project, service)
 	)
 	if err := client.request(http.MethodGet, path, &services, nil); err != nil {
 		return nil, err
@@ -90,7 +103,7 @@ func (client *Client) ListServices(project, service string) ([]Service, error) {
 // ShowServiceLogs fetches the up-to-date logs of the latest service endpoint.
 func (client *Client) ShowServiceLogs(project, service string, w io.Writer) error {
 	var (
-		path = fmt.Sprintf("/%s/%s/logs", project, service)
+		path = fmt.Sprintf("/projects/%s/services/%s/logs", project, service)
 	)
 	if err := client.streamRequest(http.MethodGet, path, w); err != nil {
 		return err
@@ -101,7 +114,7 @@ func (client *Client) ShowServiceLogs(project, service string, w io.Writer) erro
 // StreamServiceLogs streams the logs of the latest service endpoint.
 func (client *Client) StreamServiceLogs(project, service string, w io.Writer) error {
 	var (
-		path = fmt.Sprintf("/%s/%s/logs?follow=true", project, service)
+		path = fmt.Sprintf("/projects/%s/services/%s/logs?follow=true", project, service)
 	)
 	if err := client.streamRequest(http.MethodGet, path, w); err != nil {
 		return err
@@ -110,10 +123,10 @@ func (client *Client) StreamServiceLogs(project, service string, w io.Writer) er
 }
 
 // SubmitBuild submits a new build task to the server.
-func (client *Client) SubmitBuild(project, function, constructor string, archive io.ReadCloser) (*Task, error) {
+func (client *Client) SubmitBuild(project, service, constructor string, archive io.ReadCloser) (*Build, error) {
 	var (
-		task Task
-		path = fmt.Sprintf("/%s/%s/build?env=%s", project, function, constructor)
+		task Build
+		path = fmt.Sprintf("/projects/%s/services/%s/builds?constructor=%s", project, service, constructor)
 	)
 	if err := client.request(http.MethodPost, path, &task, archive); err != nil {
 		return nil, err
@@ -121,10 +134,10 @@ func (client *Client) SubmitBuild(project, function, constructor string, archive
 	return &task, nil
 }
 
-// ShowTaskLogs retrieves a specific build task logs.
-func (client *Client) ShowTaskLogs(project, service, id string, w io.Writer) error {
+// ShowBuildLogs retrieves a specific build task logs.
+func (client *Client) ShowBuildLogs(project, service, id string, w io.Writer) error {
 	var (
-		path = fmt.Sprintf("/%s/%s/tasks/%s/logs", project, service, id)
+		path = fmt.Sprintf("/projects/%s/services/%s/builds/%s/logs", project, service, id)
 	)
 	if err := client.streamRequest(http.MethodGet, path, w); err != nil {
 		return err
@@ -132,10 +145,10 @@ func (client *Client) ShowTaskLogs(project, service, id string, w io.Writer) err
 	return nil
 }
 
-// StreamTaskLogs streams the active build logs to stdout.
-func (client *Client) StreamTaskLogs(project, service, id string, w io.Writer) error {
+// StreamBuildLogs streams the active build logs to stdout.
+func (client *Client) StreamBuildLogs(project, service, id string, w io.Writer) error {
 	var (
-		path = fmt.Sprintf("/%s/%s/tasks/%s/logs?follow=true", project, service, id)
+		path = fmt.Sprintf("/projects/%s/services/%s/builds/%s/logs?follow=true", project, service, id)
 	)
 	if err := client.streamRequest(http.MethodGet, path, w); err != nil {
 		return err
@@ -143,11 +156,11 @@ func (client *Client) StreamTaskLogs(project, service, id string, w io.Writer) e
 	return nil
 }
 
-// InspectTask retrieves a specific build task.
-func (client *Client) InspectTask(project, service, id string) (*Task, error) {
+// InspectBuild retrieves a specific build task.
+func (client *Client) InspectBuild(project, service, id string) (*Build, error) {
 	var (
-		task Task
-		path = fmt.Sprintf("/%s/%s/tasks/%s/inspect", project, service, id)
+		task Build
+		path = fmt.Sprintf("/projects/%s/services/%s/builds/%s/inspect", project, service, id)
 	)
 	if err := client.request(http.MethodGet, path, &task, nil); err != nil {
 		return nil, err
@@ -155,11 +168,11 @@ func (client *Client) InspectTask(project, service, id string) (*Task, error) {
 	return &task, nil
 }
 
-// ListTasks retrieves all builds for a specific service.
-func (client *Client) ListTasks(project, service, id string) ([]Task, error) {
+// ListBuilds retrieves all builds for a specific service.
+func (client *Client) ListBuilds(project, service, id string) ([]Build, error) {
 	var (
-		tasks []Task
-		path  = fmt.Sprintf("/%s/%s/tasks/%s", project, service, id)
+		tasks []Build
+		path  = fmt.Sprintf("/projects/%s/services/%s/builds/%s", project, service, id)
 	)
 	if err := client.request(http.MethodGet, path, &tasks, nil); err != nil {
 		return nil, err
@@ -167,29 +180,65 @@ func (client *Client) ListTasks(project, service, id string) ([]Task, error) {
 	return tasks, nil
 }
 
-type Service struct {
-	ID      string `json:"id"`
-	Label   string `json:"label"`
-	Version string `json:"version"`
+// ListPermissions retrieves all permissions set for a specific project.
+func (client *Client) ListPermissions(project string) (PermissionSet, error) {
+	var (
+		set  = make(PermissionSet)
+		path = fmt.Sprintf("/projects/%s/auth", project)
+	)
+	if err := client.request(http.MethodGet, path, &set, nil); err != nil {
+		return nil, err
+	}
+	return set, nil
 }
 
-type Task struct {
-	ID      string    `json:"id"`
-	Label   string    `json:"label"`
-	Status  string    `json:"status"`
-	Domain  string    `json:"domain"`
-	Created time.Time `json:"created"`
-	Logs    string    `json:"logs"`
-	Err     string    `json:"error"`
+// ModifyPermission modifies the permission set of a project.
+func (client *Client) ModifyPermission(project, user, action string, forbid bool) error {
+	var (
+		resp   struct{}
+		path   = fmt.Sprintf("/projects/%s/auth/%s/%s", project, user, action)
+		method = http.MethodPost
+	)
+	if forbid {
+		method = http.MethodDelete
+	}
+	if err := client.request(method, path, &resp, nil); err != nil {
+		return err
+	}
+	return nil
+}
+
+type PermissionSet map[string][]string
+
+type Service struct {
+	ID         string    `json:"id"`
+	Name       string    `json:"name"`
+	Deployment int64     `json:"version"`
+	CreatedAt  time.Time `json:"createdAt"`
+	DeployedAt time.Time `json:"deployedAt"`
+}
+
+type Build struct {
+	ID          string    `json:"id"`
+	Constructor string    `json:"constructor"`
+	Status      string    `json:"status"`
+	Err         string    `json:"error"`
+	CreatedAt   time.Time `json:"createdAt"`
+	Flags       string    `json:"flags"`
+	Owner       string    `json:"owner"`
 }
 
 // NewClient creates a new client instance.
-func NewClient(endpoint, token string) *Client {
-	return &Client{
+func NewClient(endpoint, token string) (*Client, error) {
+	client := &Client{
 		Endpoint: endpoint,
 		Token:    token,
 		http: &http.Client{
 			Timeout: time.Minute,
 		},
 	}
+	if err := client.check(); err != nil {
+		return nil, err
+	}
+	return client, nil
 }

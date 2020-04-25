@@ -65,40 +65,41 @@ valar delete [service]
 valar alias [service] [alias]
 ```
 > The alias has to match either `(projectname)-(servicealias).valar.dev` or if you have set up your own domain, `(servicealias).(user-owned-domain)`.
-### Tasks
-A task can be of various types, including builds and rollbacks.
-#### Listing all tasks <span style="color:green">(implemented)</span>
+
+### Builds
+
+#### Listing all builds <span style="color:green">(implemented)</span>
 ```bash
-valar task
+valar builds
 ```
-#### Listing all tasks with the given prefix <span style="color:green">(implemented)</span>
+#### Listing all builds with the given prefix <span style="color:green">(implemented)</span>
 ```bash
-valar task [prefix]
+valar builds [prefix]
 ```
-#### Inspecting a task <span style="color:green">(implemented)</span>
+#### Inspecting a build <span style="color:green">(implemented)</span>
 ```bash
-valar task inspect [prefix]
+valar builds inspect [prefix]
 ```
-#### Abort a specific task <span style="color: grey">(not implemented)</span>
+#### Abort a specific build <span style="color: grey">(not implemented)</span>
 ```bash
-valar task --abort [taskid]
+valar builds --abort [taskid]
 ```
-#### Show logs from task <span style="color:green">(implemented)</span>
+#### Show logs from build <span style="color:green">(implemented)</span>
 ```bash
-valar task logs [--follow] [taskid]
+valar builds logs [--follow] [taskid]
 ```
 ### Permissions
-#### View permissions <span style="color: grey">(not implemented)</span>
+#### View permissions <span style="color: green">(implemented)</span>
 ```bash
 valar auth [service]
 ```
-#### Allow somebody to read/write/invoke <span style="color: grey">(not implemented)</span>
+#### Allow somebody to read/write/invoke <span style="color: green">(implemented)</span>
 ```bash
-valar auth --allow [user]:[read|write|invoke] [service]
+valar auth allow [user]:[read|write|invoke]
 ```
-#### Disallow somebody to read/write/invoke <span style="color: grey">(not implemented)</span>
+#### Disallow somebody to read/write/invoke <span style="color: green">(implemented)</span>
 ```bash
-valar auth --forbid [user]:[read|write|invoke] [service]
+valar auth forbid [user]:[read|write|invoke]
 ```
 #### Reset permissions to project default <span style="color: grey">(not implemented)</span>
 ```bash

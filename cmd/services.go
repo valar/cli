@@ -3,12 +3,14 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 	"text/tabwriter"
 	"valar/cli/pkg/api"
 	"valar/cli/pkg/config"
 	"valar/cli/pkg/util"
 
+	"github.com/dustin/go-humanize"
 	"github.com/spf13/cobra"
 )
 
@@ -27,11 +29,11 @@ var initCmd = &cobra.Command{
 			return fmt.Errorf("bad naming scheme: %w", err)
 		}
 		cfg := &config.Config{
-			Ignore:   initIgnore,
-			Project:  initProject,
-			Function: args[0],
+			Ignore:      initIgnore,
+			Project:     initProject,
+			Service:     args[0],
+			Constructor: initEnv,
 		}
-		cfg.Environment.Name = initEnv
 		if _, err := os.Stat(functionConfiguration); err == nil && !initForce {
 			return fmt.Errorf("configuration already exists, please use --force flag to override")
 		}
@@ -48,7 +50,10 @@ var listCmd = &cobra.Command{
 		if err := cfg.ReadFromFile(functionConfiguration); err != nil {
 			return err
 		}
-		client := api.NewClient(endpoint, token)
+		client, err := api.NewClient(endpoint, token)
+		if err != nil {
+			return err
+		}
 		prefix := ""
 		if len(args) == 1 {
 			prefix = args[0]
@@ -58,12 +63,13 @@ var listCmd = &cobra.Command{
 			return fmt.Errorf("listing services: %w", err)
 		}
 		tw := tabwriter.NewWriter(os.Stdout, 0, 0, 1, ' ', 0)
-		fmt.Fprintln(tw, "Label\tVersion\tTask")
+		fmt.Fprintln(tw, "Name\tDeployment\tCreated\tLast deployed")
 		for _, svc := range services {
 			fmt.Fprintln(tw, strings.Join([]string{
-				svc.Label,
-				svc.Version,
-				svc.ID,
+				svc.Name,
+				strconv.FormatInt(svc.Deployment, 10),
+				humanize.Time(svc.CreatedAt),
+				humanize.Time(svc.DeployedAt),
 			}, "\t"))
 		}
 		tw.Flush()
@@ -80,18 +86,21 @@ var serviceLogsCmd = &cobra.Command{
 		if err := cfg.ReadFromFile(functionConfiguration); err != nil {
 			return err
 		}
-		client := api.NewClient(endpoint, token)
+		client, err := api.NewClient(endpoint, token)
+		if err != nil {
+			return err
+		}
 		if len(args) == 1 {
-			cfg.Function = args[0]
+			cfg.Service = args[0]
 		}
 		if logsFollow {
-			return client.StreamServiceLogs(cfg.Project, cfg.Function, os.Stdout)
+			return client.StreamServiceLogs(cfg.Project, cfg.Service, os.Stdout)
 		}
-		return client.ShowServiceLogs(cfg.Project, cfg.Function, os.Stdout)
+		return client.ShowServiceLogs(cfg.Project, cfg.Service, os.Stdout)
 	}),
 }
 
-func pushFolder(cfg *config.Config, folder string) (*api.Task, error) {
+func pushFolder(cfg *config.Config, folder string) (*api.Build, error) {
 	archivePath, err := util.CompressDir(folder, cfg.Ignore)
 	if err != nil {
 		return nil, fmt.Errorf("package compression failed: %w", err)
@@ -102,8 +111,11 @@ func pushFolder(cfg *config.Config, folder string) (*api.Task, error) {
 		return nil, fmt.Errorf("package archive failed: %w", err)
 	}
 	defer targzFile.Close()
-	client := api.NewClient(endpoint, token)
-	task, err := client.SubmitBuild(cfg.Project, cfg.Function, cfg.Environment.Name, targzFile)
+	client, err := api.NewClient(endpoint, token)
+	if err != nil {
+		return nil, err
+	}
+	task, err := client.SubmitBuild(cfg.Project, cfg.Service, cfg.Constructor, targzFile)
 	if err != nil {
 		return nil, err
 	}

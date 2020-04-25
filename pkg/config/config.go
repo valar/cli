@@ -9,12 +9,10 @@ import (
 )
 
 type Config struct {
-	Project     string `yaml:"project"`
-	Function    string `yaml:"function"`
-	Environment struct {
-		Name string `yaml:"name"`
-	} `yaml:"environment"`
-	Ignore []string `yaml:"ignore"`
+	Project     string   `yaml:"project"`
+	Service     string   `yaml:"service"`
+	Constructor string   `yaml:"constructor"`
+	Ignore      []string `yaml:"ignore"`
 }
 
 func (config *Config) ReadFromFile(path string) error {
