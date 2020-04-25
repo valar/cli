@@ -91,7 +91,7 @@ valar builds logs [--follow] [taskid]
 ### Permissions
 #### View permissions <span style="color: green">(implemented)</span>
 ```bash
-valar auth [service]
+valar auth
 ```
 #### Allow someone to read/write/invoke <span style="color: green">(implemented)</span>
 ```bash
