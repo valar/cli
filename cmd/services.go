@@ -64,7 +64,7 @@ var listCmd = &cobra.Command{
 			return fmt.Errorf("listing services: %w", err)
 		}
 		sort.Slice(services, func(i, j int) bool {
-			return strings.Compare(services[i].Name, services[j].Name) < 0
+			return services[i].DeployedAt.Before(services[j].DeployedAt)
 		})
 		tw := tabwriter.NewWriter(os.Stdout, 0, 0, 1, ' ', 0)
 		fmt.Fprintln(tw, "Name\tDeployment\tCreated\tLast deployed")
@@ -161,7 +161,6 @@ func init() {
 	cobra.MarkFlagRequired(initPf, "type")
 	cobra.MarkFlagRequired(initPf, "project")
 	serviceLogsCmd.PersistentFlags().BoolVarP(&logsFollow, "follow", "f", false, "follow logs")
-
 	rootCmd.AddCommand(listCmd)
 	rootCmd.AddCommand(serviceLogsCmd)
 	rootCmd.AddCommand(initCmd)
