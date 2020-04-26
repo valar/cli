@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 	"text/tabwriter"
@@ -62,6 +63,9 @@ var listCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("listing services: %w", err)
 		}
+		sort.Slice(services, func(i, j int) bool {
+			return strings.Compare(services[i].Name, services[j].Name) < 0
+		})
 		tw := tabwriter.NewWriter(os.Stdout, 0, 0, 1, ' ', 0)
 		fmt.Fprintln(tw, "Name\tDeployment\tCreated\tLast deployed")
 		for _, svc := range services {
