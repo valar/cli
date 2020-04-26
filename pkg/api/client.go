@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
-	"log"
 	"net/http"
 	"time"
 )
@@ -69,7 +68,6 @@ func (client *Client) request(method, path string, obj interface{}, post io.Read
 		return fmt.Errorf("client request: %w", err)
 	}
 	req.Header.Add("Authorization", "Bearer "+client.Token)
-	log.Println(method, req.URL)
 	resp, err := client.http.Do(req)
 	if err != nil {
 		return fmt.Errorf("submitting request: %w", err)
