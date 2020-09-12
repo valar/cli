@@ -1,4 +1,4 @@
-# <img alt="Valar CLI" src="https://user-images.githubusercontent.com/3391295/69001175-4874f400-08d2-11ea-99e8-63d256d7da03.png" height="30">
+# <img alt="Valar CLI" src="https://user-images.githubusercontent.com/3391295/80893874-701c1500-8cd6-11ea-8805-e9bcb5196b0a.png" height="30">
 
 This repository contains the command line interface for Valar.
 
