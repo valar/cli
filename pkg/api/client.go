@@ -206,6 +206,18 @@ func (client *Client) ModifyPermission(project, user, action string, forbid bool
 	return nil
 }
 
+// ListDeployments shows all deployments of a specific service.
+func (client *Client) ListDeployments(project, service string) ([]Deployment, error) {
+	var (
+		depls []Deployment
+		path  = fmt.Sprintf("/projects/%s/services/%s/deployments", project, service)
+	)
+	if err := client.request(http.MethodGet, path, &depls, nil); err != nil {
+		return nil, err
+	}
+	return depls, nil
+}
+
 type PermissionSet map[string][]string
 
 type Service struct {
@@ -224,6 +236,13 @@ type Build struct {
 	CreatedAt   time.Time `json:"createdAt"`
 	Flags       string    `json:"flags"`
 	Owner       string    `json:"owner"`
+}
+
+type Deployment struct {
+	Version   int64     `json:"version"`
+	CreatedAt time.Time `json:"createdAt"`
+	Error     string    `json:"error"`
+	Status    string    `json:"status"`
 }
 
 // NewClient creates a new client instance.
