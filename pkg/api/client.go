@@ -218,6 +218,18 @@ func (client *Client) ListDeployments(project, service string) ([]Deployment, er
 	return depls, nil
 }
 
+// SubmitDeploy submits a new deployment of the given build.
+func (client *Client) SubmitDeploy(project, service, build string) (*Deployment, error) {
+	var (
+		depl Deployment
+		path = fmt.Sprintf("/projects/%s/services/%s/builds/%s/deploy", project, service, build)
+	)
+	if err := client.request(http.MethodPost, path, &depl, nil); err != nil {
+		return nil, err
+	}
+	return &depl, nil
+}
+
 type PermissionSet map[string][]string
 
 type Service struct {

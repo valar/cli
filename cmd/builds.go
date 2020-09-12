@@ -77,6 +77,23 @@ var inspectCmd = &cobra.Command{
 	}),
 }
 
+var deployCmd = &cobra.Command{
+	Use:   "deploy [id]",
+	Short: "Deploy the build with the fully given ID",
+	Args:  cobra.ExactArgs(1),
+	Run: runAndHandle(func(cmd *cobra.Command, args []string) error {
+		cfg := &config.Config{}
+		if err := cfg.ReadFromFile(functionConfiguration); err != nil {
+			return err
+		}
+		client, err := api.NewClient(endpoint, token)
+		if err != nil {
+			return err
+		}
+		return deployBuild(client, cfg, args[0])
+	}),
+}
+
 func listBuilds(client *api.Client, cfg *config.Config, id string) error {
 	builds, err := client.ListBuilds(cfg.Project, cfg.Service, id)
 	if err != nil {
@@ -118,6 +135,15 @@ func inspectBuild(client *api.Client, cfg *config.Config, id string) error {
 	return nil
 }
 
+func deployBuild(client *api.Client, cfg *config.Config, id string) error {
+	deployment, err := client.SubmitDeploy(cfg.Project, cfg.Service, id)
+	if err != nil {
+		return err
+	}
+	fmt.Println(deployment.Version)
+	return nil
+}
+
 func colorize(status string) string {
 	switch status {
 	case "scheduled":
@@ -138,5 +164,6 @@ func init() {
 	buildLogsCmd.PersistentFlags().BoolVarP(&logsFollow, "follow", "f", false, "follow the logs")
 	buildCmd.AddCommand(inspectCmd)
 	buildCmd.AddCommand(buildLogsCmd)
+	buildCmd.AddCommand(deployCmd)
 	rootCmd.AddCommand(buildCmd)
 }
