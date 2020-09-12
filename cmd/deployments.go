@@ -41,12 +41,13 @@ func listDeployments(client *api.Client, cfg *config.Config) error {
 		return deployments[i].Version < deployments[j].Version
 	})
 	tw := ansiterm.NewTabWriter(os.Stdout, 6, 0, 1, ' ', 0)
-	fmt.Fprintln(tw, "Version\tStatus\tCreated")
+	fmt.Fprintln(tw, "Version\tStatus\tCreated\tBuild")
 	for _, d := range deployments {
 		fmt.Fprintln(tw, strings.Join([]string{
 			strconv.FormatInt(d.Version, 10),
 			colorize(d.Status),
 			humanize.Time(d.CreatedAt),
+			d.Build,
 		}, "\t"))
 	}
 	tw.Flush()

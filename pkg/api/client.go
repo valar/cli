@@ -243,6 +243,7 @@ type Deployment struct {
 	CreatedAt time.Time `json:"createdAt"`
 	Error     string    `json:"error"`
 	Status    string    `json:"status"`
+	Build     string    `json:"build"`
 }
 
 // NewClient creates a new client instance.
