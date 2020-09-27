@@ -8,14 +8,14 @@ import (
 	"gopkg.in/yaml.v2"
 )
 
-type Config struct {
+type ServiceConfig struct {
 	Project     string   `yaml:"project"`
 	Service     string   `yaml:"service"`
 	Constructor string   `yaml:"constructor"`
 	Ignore      []string `yaml:"ignore"`
 }
 
-func (config *Config) ReadFromFile(path string) error {
+func (config *ServiceConfig) ReadFromFile(path string) error {
 	fd, err := os.Open(path)
 	if err != nil {
 		return errors.New("missing configuration, please run init first")
@@ -28,7 +28,7 @@ func (config *Config) ReadFromFile(path string) error {
 	return nil
 }
 
-func (config *Config) WriteToFile(path string) error {
+func (config *ServiceConfig) WriteToFile(path string) error {
 	fd, err := os.Create(path)
 	if err != nil {
 		return fmt.Errorf("config write: %w", err)
