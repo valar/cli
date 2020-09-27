@@ -16,10 +16,10 @@ import (
 
 var deploymentCmd = &cobra.Command{
 	Use:   "deployments",
-	Short: "List all deployments",
+	Short: "List deployments of the service",
 	Args:  cobra.NoArgs,
 	Run: runAndHandle(func(cmd *cobra.Command, args []string) error {
-		cfg := &config.Config{}
+		cfg := &config.ServiceConfig{}
 		if err := cfg.ReadFromFile(functionConfiguration); err != nil {
 			return err
 		}
@@ -31,7 +31,49 @@ var deploymentCmd = &cobra.Command{
 	}),
 }
 
-func listDeployments(client *api.Client, cfg *config.Config) error {
+var rollbackDelta int
+
+var rollbackCmd = &cobra.Command{
+	Use:   "rollback",
+	Short: "Reverse service to the previous deployment",
+	Args:  cobra.NoArgs,
+	Run: runAndHandle(func(cmd *cobra.Command, args []string) error {
+		cfg := &config.ServiceConfig{}
+		if err := cfg.ReadFromFile(functionConfiguration); err != nil {
+			return err
+		}
+		client, err := api.NewClient(endpoint, token)
+		if err != nil {
+			return err
+		}
+		return rollbackLatestDeployment(client, cfg)
+	}),
+}
+
+func rollbackLatestDeployment(client *api.Client, cfg *config.ServiceConfig) error {
+	deployments, err := client.ListDeployments(cfg.Project, cfg.Service)
+	if err != nil {
+		return err
+	}
+	if len(deployments) < rollbackDelta+1 {
+		return fmt.Errorf("not enough deployments available")
+	}
+	// Sort by version (desc)
+	sort.Slice(deployments, func(i, j int) bool {
+		return deployments[i].Version > deployments[j].Version
+	})
+	// Pick build from deployment 1
+	build := deployments[rollbackDelta].Build
+	// Deploy build
+	rollback, err := client.SubmitDeploy(cfg.Project, cfg.Service, build)
+	if err != nil {
+		return err
+	}
+	fmt.Println(rollback.Status)
+	return nil
+}
+
+func listDeployments(client *api.Client, cfg *config.ServiceConfig) error {
 	deployments, err := client.ListDeployments(cfg.Project, cfg.Service)
 	if err != nil {
 		return err
@@ -55,5 +97,7 @@ func listDeployments(client *api.Client, cfg *config.Config) error {
 }
 
 func init() {
+	rollbackCmd.Flags().IntVarP(&rollbackDelta, "delta", "d", 1, "number of deployments to roll back")
+	deploymentCmd.AddCommand(rollbackCmd)
 	rootCmd.AddCommand(deploymentCmd)
 }
