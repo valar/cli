@@ -56,13 +56,13 @@ valar logs [service]
 ```bash
 valar deployments
 ```
+#### Reverse service to the previous deployment <span style="color: grey">[implemented]</span>
+```bash
+valar deployments rollback [--delta 1]
+```
 #### Deploy a specific build of a service [implements]
 ```bash
 valar builds deploy [buildid]
-```
-#### Reverse service to previous deployment <span style="color: grey">[not implemented]</span>
-```bash
-valar deployments rollback
 ```
 #### Delete a service <span style="color: grey">[not implemented]</span>
 ```bash
