@@ -20,47 +20,55 @@ EOF
 
 ### Projects
 
-#### Set up a new project <span style="color: grey">(not implemented)</span>
+#### Set up a new project <span style="color: grey">[not implemented]</span>
 ```
 valar create [--public] [project-name]
 ```
 > Public projects can be invoked by any anonymous person.
-#### Set the default project, endpoint and token <span style="color:grey">(not implemented)
+#### Set the default project, endpoint and token <span style="color:grey">[not implemented]
 ```
 valar use --project=[project-name] --api-token=[api-token] --api-endpoint=[api-endpoint]
 ```
-#### Destroy a project <span style="color: grey">(not implemented)</span>
+#### Destroy a project <span style="color: grey">[not implemented]</span>
 ```bash
 valar destroy [project-name]
 ```
 > Destroying a project deletes all services and configuration associated with it. Use with care.
 ### Services
-#### Create local configuration <span style="color:green">(implemented)</span>
+#### Create local configuration <span style="color:green">[implemented]</span>
 ```bash
 valar init --type=[constructor] --project=[project-name] [service]
 ```
 > Valar supports a variety of constructors. If you are looking for an up-to-date list, please refer to [the official documentation](https://docs.valar.dev).
-#### Deploying a service <span style="color:green">(implemented)</span>
+#### Deploying a service <span style="color:green">[implemented]</span>
 ```bash
 valar push
 ```
-#### Listing all services in the project <span style="color: grey">(not implemented)</span>
+#### Listing all services in the project <span style="color: grey">[not implemented]</span>
 ```bash
 valar list
 ```
-#### Show the logs of the latest service version <span style="color: green">(implemented)</span>
+#### Show the logs of the latest deployment <span style="color: green">[implemented]</span>
 ```
 valar logs [service]
 ```
-#### Reverse service to old version <span style="color: grey">(not implemented)</span>
+#### Listing all deployments of a service [implemented]
 ```bash
-valar rollback [service] [versionid]
+valar deployments
 ```
-#### Delete a service <span style="color: grey">(not implemented)</span>
+#### Deploy a specific build of a service [implements]
+```bash
+valar builds deploy [buildid]
+```
+#### Reverse service to previous deployment <span style="color: grey">[not implemented]</span>
+```bash
+valar deployments rollback
+```
+#### Delete a service <span style="color: grey">[not implemented]</span>
 ```bash
 valar delete [service]
 ```
-#### Set up service alias <span style="color: grey">(not implemented)</span>
+#### Set up service alias <span style="color: grey">[not implemented]</span>
 ```bash
 valar alias [service] [alias]
 ```
@@ -68,40 +76,42 @@ valar alias [service] [alias]
 
 ### Builds
 
-#### Listing all builds <span style="color:green">(implemented)</span>
+#### Listing all builds <span style="color:green">[implemented]</span>
 ```bash
 valar builds
 ```
-#### Listing all builds with the given prefix <span style="color:green">(implemented)</span>
+#### Listing all builds with the given prefix <span style="color:green">[implemented]</span>
 ```bash
 valar builds [prefix]
 ```
-#### Inspecting a build <span style="color:green">(implemented)</span>
+#### Inspecting a build <span style="color:green">[implemented]</span>
 ```bash
 valar builds inspect [prefix]
 ```
-#### Abort a specific build <span style="color: grey">(not implemented)</span>
+#### Abort a specific build <span style="color: grey">[not implemented]</span>
 ```bash
-valar builds --abort [taskid]
+valar builds abort [buildid]
 ```
-#### Show logs from build <span style="color:green">(implemented)</span>
+#### Show logs from build <span style="color:green">[implemented]</span>
 ```bash
-valar builds logs [--follow] [taskid]
+valar builds logs [--follow] [buildid]
 ```
 ### Permissions
-#### View permissions <span style="color: green">(implemented)</span>
+#### View permissions <span style="color: green">[implemented]</span>
 ```bash
 valar auth
 ```
-#### Allow someone to read/write/invoke <span style="color: green">(implemented)</span>
+#### Allow someone to read/write/invoke <span style="color: green">[implemented]</span>
 ```bash
 valar auth allow --user [user] --action [read|write|invoke|manage]
 ```
-#### Forbid someone to read/write/invoke <span style="color: green">(implemented)</span>
+#### Forbid someone to read/write/invoke <span style="color: green">[implemented]</span>
 ```bash
 valar auth forbid --user [user] --action [read|write|invoke|manage]
 ```
-#### Reset permissions to project default <span style="color: grey">(not implemented)</span>
+#### Reset permissions to project default <span style="color: grey">[not implemented]</span>
 ```bash
 valar auth --reset
 ```
+
+> In case of a public project, this means only the project owner has write, read and invoke access, while any person may invoke a service of the project.
