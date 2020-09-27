@@ -9,14 +9,22 @@ import (
 	"valar/cli/pkg/config"
 
 	"github.com/spf13/cobra"
+	"github.com/spf13/viper"
 )
 
 var (
+	useCmd = &cobra.Command{
+		Use:   "use",
+		Short: "Write current configuration to disk",
+		Run: runAndHandle(func(cmd *cobra.Command, args []string) error {
+			return viper.WriteConfig()
+		}),
+	}
 	authCmd = &cobra.Command{
 		Use:   "auth",
 		Short: "Manage project permissions",
 		Run: runAndHandle(func(cmd *cobra.Command, args []string) error {
-			cfg := &config.Config{}
+			cfg := &config.ServiceConfig{}
 			if err := cfg.ReadFromFile(functionConfiguration); err != nil {
 				return err
 			}
@@ -43,7 +51,7 @@ var (
 		Short: "Allow a user to perform a specific action",
 		Args:  cobra.ExactArgs(0),
 		Run: runAndHandle(func(cmd *cobra.Command, args []string) error {
-			cfg := &config.Config{}
+			cfg := &config.ServiceConfig{}
 			if err := cfg.ReadFromFile(functionConfiguration); err != nil {
 				return err
 			}
@@ -62,7 +70,7 @@ var (
 		Short: "Forbid a user to perform a specific action",
 		Args:  cobra.ExactArgs(0),
 		Run: runAndHandle(func(cmd *cobra.Command, args []string) error {
-			cfg := &config.Config{}
+			cfg := &config.ServiceConfig{}
 			if err := cfg.ReadFromFile(functionConfiguration); err != nil {
 				return err
 			}

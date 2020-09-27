@@ -20,10 +20,10 @@ var buildAbort bool
 
 var buildCmd = &cobra.Command{
 	Use:   "builds [prefix]",
-	Short: "List all builds",
+	Short: "List builds of the service",
 	Args:  cobra.MaximumNArgs(1),
 	Run: runAndHandle(func(cmd *cobra.Command, args []string) error {
-		cfg := &config.Config{}
+		cfg := &config.ServiceConfig{}
 		if err := cfg.ReadFromFile(functionConfiguration); err != nil {
 			return err
 		}
@@ -45,7 +45,7 @@ var buildLogsCmd = &cobra.Command{
 	Short: "Show the build logs of the given task",
 	Args:  cobra.ExactArgs(1),
 	Run: runAndHandle(func(cmd *cobra.Command, args []string) error {
-		cfg := &config.Config{}
+		cfg := &config.ServiceConfig{}
 		if err := cfg.ReadFromFile(functionConfiguration); err != nil {
 			return err
 		}
@@ -65,7 +65,7 @@ var inspectCmd = &cobra.Command{
 	Short: "Inspect the first matched task with the given ID prefix",
 	Args:  cobra.ExactArgs(1),
 	Run: runAndHandle(func(cmd *cobra.Command, args []string) error {
-		cfg := &config.Config{}
+		cfg := &config.ServiceConfig{}
 		if err := cfg.ReadFromFile(functionConfiguration); err != nil {
 			return err
 		}
@@ -82,7 +82,7 @@ var deployCmd = &cobra.Command{
 	Short: "Deploy the build with the fully given ID",
 	Args:  cobra.ExactArgs(1),
 	Run: runAndHandle(func(cmd *cobra.Command, args []string) error {
-		cfg := &config.Config{}
+		cfg := &config.ServiceConfig{}
 		if err := cfg.ReadFromFile(functionConfiguration); err != nil {
 			return err
 		}
@@ -94,7 +94,7 @@ var deployCmd = &cobra.Command{
 	}),
 }
 
-func listBuilds(client *api.Client, cfg *config.Config, id string) error {
+func listBuilds(client *api.Client, cfg *config.ServiceConfig, id string) error {
 	builds, err := client.ListBuilds(cfg.Project, cfg.Service, id)
 	if err != nil {
 		return err
@@ -116,7 +116,7 @@ func listBuilds(client *api.Client, cfg *config.Config, id string) error {
 	return nil
 }
 
-func inspectBuild(client *api.Client, cfg *config.Config, id string) error {
+func inspectBuild(client *api.Client, cfg *config.ServiceConfig, id string) error {
 	build, err := client.InspectBuild(cfg.Project, cfg.Service, id)
 	if err != nil {
 		return err
@@ -135,7 +135,7 @@ func inspectBuild(client *api.Client, cfg *config.Config, id string) error {
 	return nil
 }
 
-func deployBuild(client *api.Client, cfg *config.Config, id string) error {
+func deployBuild(client *api.Client, cfg *config.ServiceConfig, id string) error {
 	deployment, err := client.SubmitDeploy(cfg.Project, cfg.Service, id)
 	if err != nil {
 		return err

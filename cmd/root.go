@@ -9,8 +9,6 @@ import (
 )
 
 var version string
-var project string
-var token, endpoint string
 
 var rootCmd = &cobra.Command{
 	Use:   "valar",
@@ -21,16 +19,17 @@ You code. We do the rest.
 We take care while you do what you do best.`,
 }
 
+var token, endpoint string
+
 func init() {
 	viper.SetConfigName("valar.cloud")
-	viper.AddConfigPath("/etc/valar/")
-	viper.AddConfigPath("$HOME/.valar")
+	viper.AddConfigPath("$HOME/.valar/")
 	viper.AddConfigPath(".")
 	viper.ReadInConfig()
-	viper.SetEnvPrefix("valar")
+	viper.SetEnvPrefix("VALAR")
 	viper.AutomaticEnv()
-	rootCmd.PersistentFlags().StringVar(&token, "api-token", viper.GetString("token"), "Valar API token")
-	rootCmd.PersistentFlags().StringVar(&endpoint, "api-endpoint", viper.GetString("endpoint"), "Valar API endpoint")
+	rootCmd.PersistentFlags().StringVar(&token, "api-token", viper.GetString("token"), "API token to use")
+	rootCmd.PersistentFlags().StringVar(&endpoint, "api-endpoint", viper.GetString("endpoint"), "API endpoint to use")
 	rootCmd.SetVersionTemplate("Valar CLI {{.Version}}\n")
 	rootCmd.Version = version
 }

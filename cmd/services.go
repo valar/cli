@@ -18,22 +18,23 @@ import (
 const functionConfiguration = ".valar.yml"
 
 var initIgnore []string
-var initEnv, initProject string
+var initProject, initConstructor string
 var initForce bool
 
 var initCmd = &cobra.Command{
 	Use:   "init [service]",
-	Short: "Create a service configuration file",
+	Short: "Configure a new service",
 	Args:  cobra.ExactArgs(1),
 	Run: runAndHandle(func(cmd *cobra.Command, args []string) error {
+		// TODO(lnsp): In case initProject is empty, fetch user name from server and use as project name
 		if err := api.VerifyNames(initProject, args[0]); err != nil {
 			return fmt.Errorf("bad naming scheme: %w", err)
 		}
-		cfg := &config.Config{
+		cfg := &config.ServiceConfig{
 			Ignore:      initIgnore,
 			Project:     initProject,
 			Service:     args[0],
-			Constructor: initEnv,
+			Constructor: initConstructor,
 		}
 		if _, err := os.Stat(functionConfiguration); err == nil && !initForce {
 			return fmt.Errorf("configuration already exists, please use --force flag to override")
@@ -44,10 +45,10 @@ var initCmd = &cobra.Command{
 
 var listCmd = &cobra.Command{
 	Use:   "list [prefix]",
-	Short: "Show all services in the current project with the prefix",
+	Short: "Show services in the current project",
 	Args:  cobra.MaximumNArgs(1),
 	Run: runAndHandle(func(cmd *cobra.Command, args []string) error {
-		cfg := &config.Config{}
+		cfg := &config.ServiceConfig{}
 		if err := cfg.ReadFromFile(functionConfiguration); err != nil {
 			return err
 		}
@@ -83,10 +84,10 @@ var listCmd = &cobra.Command{
 
 var serviceLogsCmd = &cobra.Command{
 	Use:   "logs [service]",
-	Short: "Show the logs of the latest service version",
+	Short: "Show the logs of the latest deployment",
 	Args:  cobra.MaximumNArgs(1),
 	Run: runAndHandle(func(cmd *cobra.Command, args []string) error {
-		cfg := &config.Config{}
+		cfg := &config.ServiceConfig{}
 		if err := cfg.ReadFromFile(functionConfiguration); err != nil {
 			return err
 		}
@@ -104,7 +105,7 @@ var serviceLogsCmd = &cobra.Command{
 	}),
 }
 
-func pushFolder(cfg *config.Config, folder string) (*api.Build, error) {
+func pushFolder(cfg *config.ServiceConfig, folder string) (*api.Build, error) {
 	archivePath, err := util.CompressDir(folder, cfg.Ignore)
 	if err != nil {
 		return nil, fmt.Errorf("package compression failed: %w", err)
@@ -132,7 +133,7 @@ var pushCmd = &cobra.Command{
 	Args:  cobra.MaximumNArgs(1),
 	Run: runAndHandle(func(cmd *cobra.Command, args []string) error {
 		// Load configuration
-		cfg := &config.Config{}
+		cfg := &config.ServiceConfig{}
 		if err := cfg.ReadFromFile(functionConfiguration); err != nil {
 			return err
 		}
@@ -154,9 +155,9 @@ var pushCmd = &cobra.Command{
 
 func init() {
 	initPf := initCmd.PersistentFlags()
-	initPf.StringArrayVarP(&initIgnore, "ignore", "i", []string{".valar.yml", ".git", "node_modules"}, "ignore files")
-	initPf.StringVarP(&initEnv, "type", "t", "", "build constructor type")
-	initPf.StringVarP(&initProject, "project", "p", "", "project name")
+	initPf.StringArrayVarP(&initIgnore, "ignore", "i", []string{".valar.yml", ".git", "node_modules"}, "ignore files on push")
+	initPf.StringVarP(&initConstructor, "type", "t", "", "build constructor type")
+	initPf.StringVarP(&initProject, "project", "p", "", "project to deploy service to")
 	initPf.BoolVarP(&initForce, "force", "f", false, "allow configuration override")
 	cobra.MarkFlagRequired(initPf, "type")
 	cobra.MarkFlagRequired(initPf, "project")
