@@ -3,21 +3,43 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"text/tabwriter"
 	"valar/cli/pkg/api"
 	"valar/cli/pkg/config"
 
+	"github.com/go-yaml/yaml"
 	"github.com/spf13/cobra"
-	"github.com/spf13/viper"
 )
 
 var (
-	useCmd = &cobra.Command{
-		Use:   "use",
+	configCmd = &cobra.Command{
+		Use:   "config",
 		Short: "Write current configuration to disk",
 		Run: runAndHandle(func(cmd *cobra.Command, args []string) error {
-			return viper.WriteConfig()
+			homedir, _ := os.UserHomeDir()
+			if err := os.MkdirAll(filepath.Join(homedir, ".valar"), 0755); err != nil {
+				return err
+			}
+			cfgfile, err := os.Create(filepath.Join(homedir, ".valar/valarcfg"))
+			if err != nil {
+				return err
+			}
+			defer cfgfile.Close()
+			bytes, err := yaml.Marshal(struct {
+				APIToken    string `yaml:"token"`
+				APIEndpoint string `yaml:"endpoint"`
+			}{
+				token, endpoint,
+			})
+			if err != nil {
+				return err
+			}
+			if _, err := cfgfile.Write(bytes); err != nil {
+				return err
+			}
+			return nil
 		}),
 	}
 	authCmd = &cobra.Command{
@@ -93,4 +115,5 @@ func init() {
 	authAllowCmd.Flags().StringVarP(&authAction, "action", "a", "invoke", "Action to be modified")
 	authAllowCmd.Flags().StringVarP(&authUser, "user", "u", "anonymous", "User to be modified")
 	rootCmd.AddCommand(authCmd)
+	rootCmd.AddCommand(configCmd)
 }

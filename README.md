@@ -25,9 +25,9 @@ EOF
 valar create [--public] [project-name]
 ```
 > Public projects can be invoked by any anonymous person.
-#### Set the default project, endpoint and token <span style="color:grey">[not implemented]
+#### Set the default endpoint and token
 ```
-valar use --project=[project-name] --api-token=[api-token] --api-endpoint=[api-endpoint]
+valar config --api-token=[api-token] --api-endpoint=[api-endpoint]
 ```
 #### Destroy a project <span style="color: grey">[not implemented]</span>
 ```bash
@@ -35,32 +35,32 @@ valar destroy [project-name]
 ```
 > Destroying a project deletes all services and configuration associated with it. Use with care.
 ### Services
-#### Create local configuration <span style="color:green">[implemented]</span>
+#### Create local configuration
 ```bash
 valar init --type=[constructor] --project=[project-name] [service]
 ```
 > Valar supports a variety of constructors. If you are looking for an up-to-date list, please refer to [the official documentation](https://docs.valar.dev).
-#### Deploying a service <span style="color:green">[implemented]</span>
+#### Deploying a service
 ```bash
 valar push
 ```
-#### Listing all services in the project <span style="color: grey">[not implemented]</span>
+#### Listing all services in the project
 ```bash
 valar list
 ```
-#### Show the logs of the latest deployment <span style="color: green">[implemented]</span>
+#### Show the logs of the latest deployment
 ```
 valar logs [service]
 ```
-#### Listing all deployments of a service [implemented]
+#### Listing all deployments of a service 
 ```bash
 valar deployments
 ```
-#### Reverse service to the previous deployment <span style="color: grey">[implemented]</span>
+#### Reverse service to the previous deployment
 ```bash
 valar deployments rollback [--delta 1]
 ```
-#### Deploy a specific build of a service [implements]
+#### Deploy a specific build of a service 
 ```bash
 valar builds deploy [buildid]
 ```
@@ -76,38 +76,38 @@ valar alias [service] [alias]
 
 ### Builds
 
-#### Listing all builds <span style="color:green">[implemented]</span>
+#### Listing all builds
 ```bash
 valar builds
 ```
-#### Listing all builds with the given prefix <span style="color:green">[implemented]</span>
+#### Listing all builds with the given prefix
 ```bash
 valar builds [prefix]
 ```
-#### Inspecting a build <span style="color:green">[implemented]</span>
+#### Inspecting a build
 ```bash
 valar builds inspect [prefix]
 ```
-#### Abort a specific build <span style="color: grey">[not implemented]</span>
+#### Abort a specific build 
 ```bash
 valar builds abort [buildid]
 ```
-#### Show logs from build <span style="color:green">[implemented]</span>
+#### Show logs from build 
 ```bash
 valar builds logs [--follow] [buildid]
 ```
 ### Permissions
-#### View permissions <span style="color: green">[implemented]</span>
+#### View permissions 
 ```bash
 valar auth
 ```
-#### Allow someone to read/write/invoke <span style="color: green">[implemented]</span>
+#### Allow someone to read/write/invoke/manage
 ```bash
 valar auth allow --user [user] --action [read|write|invoke|manage]
 ```
-#### Forbid someone to read/write/invoke <span style="color: green">[implemented]</span>
+#### Forbid someone to read/write/invoke/manage
 ```bash
-valar auth forbid --user [user] --action [read|write|invoke|manage]
+valar auth forbid --user [user] --action
 ```
 #### Reset permissions to project default <span style="color: grey">[not implemented]</span>
 ```bash

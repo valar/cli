@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -22,12 +23,13 @@ We take care while you do what you do best.`,
 var token, endpoint string
 
 func init() {
-	viper.SetConfigName("valar.cloud")
-	viper.AddConfigPath("$HOME/.valar/")
-	viper.AddConfigPath(".")
-	viper.ReadInConfig()
+	// Try to load config, if not found we're fine
+	homedir, _ := os.UserHomeDir()
+	viper.SetConfigFile(filepath.Join(homedir, ".valar/valarcfg"))
+	viper.SetConfigType("yaml")
 	viper.SetEnvPrefix("VALAR")
 	viper.AutomaticEnv()
+	viper.ReadInConfig()
 	rootCmd.PersistentFlags().StringVar(&token, "api-token", viper.GetString("token"), "API token to use")
 	rootCmd.PersistentFlags().StringVar(&endpoint, "api-endpoint", viper.GetString("endpoint"), "API endpoint to use")
 	rootCmd.SetVersionTemplate("Valar CLI {{.Version}}\n")
