@@ -43,7 +43,7 @@ var logsFollow = false
 var buildLogsCmd = &cobra.Command{
 	Use:   "logs [task]",
 	Short: "Show the build logs of the given task",
-	Args:  cobra.ExactArgs(1),
+	Args:  cobra.MaximumNArgs(1),
 	Run: runAndHandle(func(cmd *cobra.Command, args []string) error {
 		cfg := &config.ServiceConfig{}
 		if err := cfg.ReadFromFile(functionConfiguration); err != nil {
@@ -53,10 +53,25 @@ var buildLogsCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		if logsFollow {
-			return client.StreamBuildLogs(cfg.Project, cfg.Service, args[0], os.Stdout)
+		// Get latest matching build
+		prefix := ""
+		if len(args) > 0 {
+			prefix = args[0]
 		}
-		return client.ShowBuildLogs(cfg.Project, cfg.Service, args[0], os.Stdout)
+		builds, err := client.ListBuilds(cfg.Project, cfg.Service, prefix)
+		if err != nil {
+			return err
+		}
+		if len(builds) == 0 {
+			return fmt.Errorf("no builds available")
+		}
+		// Sort builds by date
+		sort.Slice(builds, func(i, j int) bool { return builds[i].CreatedAt.After(builds[j].CreatedAt) })
+		latestBuildID := builds[0].ID
+		if logsFollow {
+			return client.StreamBuildLogs(cfg.Project, cfg.Service, latestBuildID, os.Stdout)
+		}
+		return client.ShowBuildLogs(cfg.Project, cfg.Service, latestBuildID, os.Stdout)
 	}),
 }
 
