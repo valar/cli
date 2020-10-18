@@ -88,13 +88,13 @@ valar builds [prefix]
 ```bash
 valar builds inspect [prefix]
 ```
-#### Abort a specific build 
+#### Abort a specific build [not implemented]
 ```bash
 valar builds abort [buildid]
 ```
 #### Show logs from build 
 ```bash
-valar builds logs [--follow] [buildid]
+valar builds logs [--follow] [optional buildid]
 ```
 ### Permissions
 #### View permissions 
