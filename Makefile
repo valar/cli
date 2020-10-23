@@ -5,7 +5,7 @@ GOTEST=$(GOCMD) test
 GOGET=$(GOCMD) get
 BINARY_NAME=bin/valar
 
-all: build test
+all: build
 
 build:
 	mkdir -p bin/
