@@ -77,7 +77,12 @@ func (client *Client) request(method, path string, obj interface{}, post io.Read
 	if err != nil {
 		return fmt.Errorf("fetching request: %w", err)
 	}
-	if resp.StatusCode != http.StatusOK {
+	switch resp.StatusCode {
+	case http.StatusOK:
+		// Do nothing, we're fine here
+	case http.StatusNotFound:
+		return fmt.Errorf("not found")
+	default:
 		return client.error(fmt.Errorf("bad response"), body)
 	}
 	if err := json.Unmarshal(body, obj); err != nil {
