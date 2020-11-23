@@ -10,7 +10,7 @@ To supply the token and endpoint without an environment variable, you can create
 
 ```bash
 $ mkdir -p ~/.valar/
-$ cat > ~/.valar/valarcfg <<EOF
+$ cat > ~/.valar/valar.cloud.yml <<EOF
 token: $VALAR_TOKEN
 endpoint: $VALAR_ENDPOINT
 EOF
@@ -19,10 +19,14 @@ EOF
 ## Install
 
 ### Homebrew
-`brew install valar/tap/valar`
+```
+brew install valar/tap/valar
+```
 
 ### Curl
-`curl -sSL https://cli.valar.dev | bash -`
+```
+curl -sSL https://cli.valar.dev | bash -
+```
 
 ## Usage
 
