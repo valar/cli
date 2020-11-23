@@ -10,7 +10,7 @@ To supply the token and endpoint without an environment variable, you can create
 
 ```bash
 $ mkdir -p ~/.valar/
-$ cat > ~/.valar/valar.cloud.yml <<EOF
+$ cat > ~/.valar/valarcfg <<EOF
 token: $VALAR_TOKEN
 endpoint: $VALAR_ENDPOINT
 EOF
