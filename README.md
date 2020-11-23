@@ -34,7 +34,7 @@ valar project create [--public] [project-name]
 > Public projects can be invoked by any anonymous person.
 #### Destroy a project <span style="color: grey">[not implemented]</span>
 ```bash
-valar project  destroy [project-name]
+valar project destroy [project-name]
 ```
 > Destroying a project deletes all services and configuration associated with it. Use with care.
 ### Services
