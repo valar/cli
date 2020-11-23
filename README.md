@@ -16,6 +16,14 @@ endpoint: $VALAR_ENDPOINT
 EOF
 ```
 
+## Install
+
+### Homebrew
+`brew install valar/tap/valar`
+
+### Curl
+`curl -sSL https://cli.valar.dev | bash -`
+
 ## Usage
 
 ### Basics
