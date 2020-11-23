@@ -21,7 +21,7 @@ jobs:
       run: |
         go get -v -t -d ./...
     - name: Set version environment
-      run: echo ::set-env name=VALAR_VERSION::$(echo ${GITHUB_REF:10})
+      run: echo "VALAR_VERSION=$(echo ${GITHUB_REF:10})" >> $GITHUB_ENV
     - name: Build
       run: |
         CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -a -tags netgo -ldflags "-X valar/cli/cmd.version=$VALAR_VERSION -s -w -extldflags \"-static\"" -o valar_linux_amd64 .
