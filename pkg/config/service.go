@@ -9,9 +9,9 @@ import (
 )
 
 type ServiceConfig struct {
-	Project     string   `yaml:"project"`
-	Service     string   `yaml:"service"`
-	Constructor string   `yaml:"constructor"`
+	Project     string   `yaml:"project,omitempty"`
+	Service     string   `yaml:"service,omitempty"`
+	Constructor string   `yaml:"constructor,omitempty"`
 	Ignore      []string `yaml:"ignore"`
 }
 
