@@ -243,6 +243,7 @@ type Service struct {
 	Deployment int64     `json:"version"`
 	CreatedAt  time.Time `json:"createdAt"`
 	DeployedAt time.Time `json:"deployedAt"`
+	Domains    []string  `json:"domains"`
 }
 
 type Build struct {
