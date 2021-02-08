@@ -31,6 +31,23 @@ var deploymentCmd = &cobra.Command{
 	}),
 }
 
+var createCmd = &cobra.Command{
+	Use:   "create [build]",
+	Short: "Deploy the build with the fully given ID",
+	Args:  cobra.ExactArgs(1),
+	Run: runAndHandle(func(cmd *cobra.Command, args []string) error {
+		cfg := &config.ServiceConfig{}
+		if err := cfg.ReadFromFile(functionConfiguration); err != nil {
+			return err
+		}
+		client, err := api.NewClient(endpoint, token)
+		if err != nil {
+			return err
+		}
+		return deployBuild(client, cfg, args[0])
+	}),
+}
+
 var rollbackDelta int
 
 var rollbackCmd = &cobra.Command{
@@ -99,5 +116,6 @@ func listDeployments(client *api.Client, cfg *config.ServiceConfig) error {
 func init() {
 	rollbackCmd.Flags().IntVarP(&rollbackDelta, "delta", "d", 1, "number of deployments to roll back")
 	deploymentCmd.AddCommand(rollbackCmd)
+	deploymentCmd.AddCommand(createCmd)
 	rootCmd.AddCommand(deploymentCmd)
 }
