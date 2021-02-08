@@ -39,9 +39,9 @@ valar config --api-token=[api-token] --api-endpoint=[api-endpoint]
 valar project create [--public] [project-name]
 ```
 > Public projects can be invoked by any anonymous person.
-#### Destroy a project <span style="color: grey">[not implemented]</span>
+#### Delete a project <span style="color: grey">[not implemented]</span>
 ```bash
-valar project destroy [project-name]
+valar project delete [project-name]
 ```
 > Destroying a project deletes all services and configuration associated with it. Use with care.
 ### Services
@@ -66,23 +66,37 @@ valar logs [service]
 ```bash
 valar deployments
 ```
+
+#### Roll out a specific build
+```bash
+valar deployments create [buildid]
+```
+
 #### Reverse service to the previous deployment
 ```bash
 valar deployments rollback [--delta 1]
 ```
-#### Deploy a specific build of a service 
-```bash
-valar builds deploy [buildid]
-```
-#### Delete a service <span style="color: grey">[not implemented]</span>
+#### Delete a service [not implemented]
 ```bash
 valar delete [service]
 ```
-#### Set up service alias <span style="color: grey">[not implemented]</span>
+
+### Domains
+
+#### Add a domain [not implemented]
 ```bash
-valar alias [service] [alias]
+valar domains add [domain]
 ```
-> The alias has to match either `(projectname)-(servicealias).valar.dev` or if you have set up your own domain, `(servicealias).(user-owned-domain)`.
+
+#### Link a domain (or subdomain) to a service [not implemented]
+```
+valar domains link [domain] [service]
+```
+
+#### Remove a domain and all domain links [not implemented]
+```
+valar domains delete [domain]
+```
 
 ### Builds
 
@@ -119,7 +133,7 @@ valar auth allow --user [user] --action [read|write|invoke|manage]
 ```bash
 valar auth forbid --user [user] --action
 ```
-#### Reset permissions to project default <span style="color: grey">[not implemented]</span>
+#### Reset permissions to project default [not implemented]
 ```bash
 valar auth --reset
 ```
