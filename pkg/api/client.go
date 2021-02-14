@@ -137,6 +137,18 @@ func (client *Client) SubmitBuild(project, service, constructor string, archive 
 	return &task, nil
 }
 
+// AbortBuild aborts a scheduled or running build.
+func (client *Client) AbortBuild(project, service, id string) error {
+	var (
+		path = fmt.Sprintf("/projects/%s/services/%s/builds/%s/abort", project, service, id)
+	)
+	var resp struct{}
+	if err := client.request("POST", path, &resp, nil); err != nil {
+		return err
+	}
+	return nil
+}
+
 // ShowBuildLogs retrieves a specific build task logs.
 func (client *Client) ShowBuildLogs(project, service, id string, w io.Writer) error {
 	var (

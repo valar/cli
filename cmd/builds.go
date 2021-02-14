@@ -16,8 +16,6 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var buildAbort bool
-
 var buildCmd = &cobra.Command{
 	Use:   "builds [prefix]",
 	Short: "List builds of the service",
@@ -35,6 +33,26 @@ var buildCmd = &cobra.Command{
 			args = append(args, "")
 		}
 		return listBuilds(client, cfg, args[0])
+	}),
+}
+
+var buildAbortCmd = &cobra.Command{
+	Use:   "abort [prefix]",
+	Short: "Abort a scheduled or running build",
+	Args:  cobra.MaximumNArgs(1),
+	Run: runAndHandle(func(cmd *cobra.Command, args []string) error {
+		cfg := &config.ServiceConfig{}
+		if err := cfg.ReadFromFile(functionConfiguration); err != nil {
+			return err
+		}
+		client, err := api.NewClient(endpoint, token)
+		if err != nil {
+			return err
+		}
+		if len(args) < 1 {
+			args = append(args, "")
+		}
+		return client.AbortBuild(cfg.Project, cfg.Service, args[0])
 	}),
 }
 
@@ -158,9 +176,9 @@ func colorize(status string) string {
 }
 
 func init() {
-	buildCmd.PersistentFlags().BoolVarP(&buildAbort, "abort", "a", false, "abort the build")
 	buildLogsCmd.PersistentFlags().BoolVarP(&logsFollow, "follow", "f", false, "follow the logs")
 	buildCmd.AddCommand(inspectCmd)
 	buildCmd.AddCommand(buildLogsCmd)
+	buildCmd.AddCommand(buildAbortCmd)
 	rootCmd.AddCommand(buildCmd)
 }

@@ -112,9 +112,9 @@ valar builds [prefix]
 ```bash
 valar builds inspect [prefix]
 ```
-#### Abort a specific build [not implemented]
+#### Abort a specific build
 ```bash
-valar builds abort [buildid]
+valar builds abort [prefix]
 ```
 #### Show logs from build 
 ```bash
