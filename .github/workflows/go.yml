@@ -87,7 +87,7 @@ jobs:
         id: get_version
         run: echo ::set-output name=version::${GITHUB_REF/refs\/tags\//}
       - name: Zip Folder
-        run: zip -r release.zip .
+        run: zip -x '*.git*' -r release.zip .
       - name: "Get SHA256"
         id: shasum
         run: echo ::set-output name=sha::"$(shasum -a 256 release.zip | awk '{printf $1}')"
