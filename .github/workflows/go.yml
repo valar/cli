@@ -85,12 +85,14 @@ jobs:
           git config --global user.name "GitHub Actions"
       - name: Get version
         id: get_version
-        run: echo ::set-output name=version::${GITHUB_REF/refs\/tags\//}
+        run: |
+          echo ::set-output name=version::${GITHUB_REF/refs\/tags\//}
+          echo ::set-output name=sha::"$(echo ${GITHUB_REF/refs\/tags\//} | cut -c2-)" # cut away the v in v1.0.0
       - name: Zip Folder
-        run: zip -x '*.git*' -r release.zip .
+        run: git archive --format zip --prefix cli-{{ steps.get_version.outputs.short_version }}/ --output cli.zip HEAD
       - name: "Get SHA256"
         id: shasum
-        run: echo ::set-output name=sha::"$(shasum -a 256 release.zip | awk '{printf $1}')"
+        run: echo ::set-output name=sha::"$(shasum -a 256 cli.zip | awk '{printf $1}')"
       - name: Bump Brew
         run: |
           brew tap git@github.com:valar/homebrew-tap.git
