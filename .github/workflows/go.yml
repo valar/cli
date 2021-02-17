@@ -122,7 +122,7 @@ jobs:
           brew tap valar/tap git@github.com:valar/homebrew-tap.git
           brew bump-formula-pr -f --version=${{ steps.get_version.outputs.version }} --no-browse --no-audit --write --commit \
             --sha256=${{ steps.shasum.outputs.sha }} \
-            --url="https://github.com/valar/cli/archive/{{ steps.get_version.outputs.version }}.zip" \
+            --url="https://github.com/valar/cli/archive/${{ steps.get_version.outputs.version }}.zip" \
             valar/tap/valar
           cd $(brew --repo valar/tap)
           git push
