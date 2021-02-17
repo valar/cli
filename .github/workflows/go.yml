@@ -117,6 +117,7 @@ jobs:
       - name: Bump Brew
         env:
           TZ: UTC8
+          SSH_AUTH_SOCK: /tmp/ssh_agent.sock
         run: |
           brew tap valar/tap git@github.com:valar/homebrew-tap.git
           brew bump-formula-pr -f --version=${{ steps.get_version.outputs.version }} --no-browse --no-audit --write --commit \
