@@ -24,11 +24,32 @@ jobs:
         CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -a -tags netgo -ldflags "-X valar/cli/cmd.version=$VALAR_VERSION -s -w -extldflags \"-static\"" -o valar_linux_amd64 .
         CGO_ENABLED=0 GOOS=linux GOARCH=arm go build -a -tags netgo -ldflags "-X valar/cli/cmd.version=$VALAR_VERSION -s -w -extldflags \"-static\"" -o valar_linux_arm .
         CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build -a -tags netgo -ldflags "-X valar/cli/cmd.version=$VALAR_VERSION -s -w -extldflags \"-static\"" -o valar_darwin_amd64 .
+    - uses: actions/upload-artifact@v2
+      with:
+        name: valar_darwin_amd64
+        path: valar_darwin_amd64
+    - uses: actions/upload-artifact@v2
+      with:
+        name: valar_linux_amd64
+        path: valar_linux_amd64
+    - uses: actions/upload-artifact@v2
+      with:
+        name: valar_linux_arm
+        path: valar_linux_arm
   release:
     name: Release
     runs-on: ubuntu-latest
     needs: [build]
     steps:
+    - uses: actions/download-artifact@v2
+      with:
+        name: valar_linux_arm
+    - uses: actions/download-artifact@v2
+      with:
+        name: valar_linux_amd64
+    - uses: actions/download-artifact@v2
+      with:
+        name: valar_darwin_amd64
     - name: Create Release
       id: create_release
       uses: actions/create-release@v1
