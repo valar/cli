@@ -9,17 +9,14 @@ jobs:
     name: Build
     runs-on: ubuntu-latest
     steps:
-
     - name: Set up Go 1.13
       uses: actions/setup-go@v1
       with:
         go-version: 1.13
-      id: go
     - name: Check out code into the Go module directory
       uses: actions/checkout@v1
     - name: Get dependencies
-      run: |
-        go get -v -t -d ./...
+      run: go get -v -t -d ./...
     - name: Set version environment
       run: echo "VALAR_VERSION=$(echo ${GITHUB_REF:10})" >> $GITHUB_ENV
     - name: Build
@@ -27,6 +24,11 @@ jobs:
         CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -a -tags netgo -ldflags "-X valar/cli/cmd.version=$VALAR_VERSION -s -w -extldflags \"-static\"" -o valar_linux_amd64 .
         CGO_ENABLED=0 GOOS=linux GOARCH=arm go build -a -tags netgo -ldflags "-X valar/cli/cmd.version=$VALAR_VERSION -s -w -extldflags \"-static\"" -o valar_linux_arm .
         CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build -a -tags netgo -ldflags "-X valar/cli/cmd.version=$VALAR_VERSION -s -w -extldflags \"-static\"" -o valar_darwin_amd64 .
+  release:
+    name: Release
+    runs-on: ubuntu-latest
+    needs: [build]
+    steps:
     - name: Create Release
       id: create_release
       uses: actions/create-release@v1
@@ -38,7 +40,6 @@ jobs:
         draft: false
         prerelease: false
     - name: Upload release asset (linux_amd64)
-      id: upload-release-asset-linux-amd64
       uses: actions/upload-release-asset@v1.0.1
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -48,7 +49,6 @@ jobs:
         asset_name: valar_linux_amd64
         asset_content_type: binary/octet-stream
     - name: Upload release asset (linux_arm)
-      id: upload-release-asset-linux-arm
       uses: actions/upload-release-asset@v1.0.1
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -58,7 +58,6 @@ jobs:
         asset_name: valar_linux_arm
         asset_content_type: binary/octet-stream
     - name: Upload release asset (darwin_amd64)
-      id: upload-release-asset-darwin-amd64
       uses: actions/upload-release-asset@v1.0.1
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -67,3 +66,43 @@ jobs:
         asset_path: ./valar_darwin_amd64
         asset_name: valar_darwin_amd64
         asset_content_type: binary/octet-stream
+  homebrew: 
+    name: "Update homebrew formula"
+    runs-on: macos-latest
+    needs: [build, release]
+    steps:
+      - uses: actions/checkout@v2  
+      - name: Setup SSH Keys and known_hosts
+        env:
+          SSH_AUTH_SOCK: /tmp/ssh_agent.sock
+          DEPLOY_KEY: ${{ secrets.DEPLOY_KEY }}
+        run: |
+          mkdir -p ~/.ssh
+          ssh-keyscan github.com >> ~/.ssh/known_hosts
+          ssh-agent -a $SSH_AUTH_SOCK > /dev/null
+          ssh-add - <<< "${DEPLOY_KEY}"
+          git config --global user.email "action@github.com"
+          git config --global user.name "GitHub Actions"
+      - name: Get version
+        id: get_version
+        run: |
+          echo ::set-output name=version::${GITHUB_REF/refs\/tags\//}
+          echo ::set-output name=sha::"$(echo ${GITHUB_REF/refs\/tags\//} | cut -c2-)" # cut away the v in v1.0.0
+      - name: Zip Folder
+        run: git archive --format zip --prefix cli-{{ steps.get_version.outputs.short_version }}/ --output cli.zip HEAD
+      - name: "Get SHA256"
+        id: shasum
+        run: echo ::set-output name=sha::"$(shasum -a 256 cli.zip | awk '{printf $1}')"
+      - name: Bump Brew
+        env:
+          TZ: UTC8
+        run: |
+          brew tap git@github.com:valar/homebrew-tap.git
+          brew bump-formula-pr -f --version=${{ steps.get_version.outputs.version }} --no-browse --no-audit --write --commit \
+            --sha256=${{ steps.shasum.outputs.sha }} \
+            --url="https://github.com/valar/cli/archive/{{ steps.get_version.outputs.version }}.zip" \
+            valar/tap/valar
+          cd $(brew --repo valar/tap)
+          git push
+        
+    
