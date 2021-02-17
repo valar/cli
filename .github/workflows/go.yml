@@ -108,7 +108,7 @@ jobs:
         id: get_version
         run: |
           echo ::set-output name=version::${GITHUB_REF/refs\/tags\//}
-          echo ::set-output name=short_version::"$(echo ${GITHUB_REF/refs\/tags\//} | cut -c2-)" # cut away the v in v1.0.0
+          echo ::set-output name=short_version::$(echo ${GITHUB_REF/refs\/tags\//} | cut -c2-)
       - name: Zip Folder
         run: git archive --format zip --prefix cli-{{ steps.get_version.outputs.short_version }}/ --output cli.zip HEAD
       - name: "Get SHA256"
