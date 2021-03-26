@@ -113,7 +113,7 @@ func listDeployments(client *api.Client, cfg *config.ServiceConfig) error {
 	return nil
 }
 
-func init() {
+func initDeploymentsCmd() {
 	rollbackCmd.Flags().IntVarP(&rollbackDelta, "delta", "d", 1, "number of deployments to roll back")
 	deploymentCmd.AddCommand(rollbackCmd)
 	deploymentCmd.AddCommand(createCmd)

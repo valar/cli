@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"valar/cli/pkg/api"
 
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
@@ -22,6 +23,18 @@ We take care while you do what you do best.`,
 
 var token, endpoint string
 
+func getDefaultProject(client *api.Client) string {
+	defaultProject := viper.GetString("defaultProject")
+	if defaultProject != "" {
+		return defaultProject
+	}
+	userInfo, err := client.UserInfo()
+	if err != nil || len(userInfo.Projects) == 0 {
+		return defaultProject
+	}
+	return userInfo.Projects[0]
+}
+
 func init() {
 	// Try to load config, if not found we're fine
 	homedir, _ := os.UserHomeDir()
@@ -34,6 +47,14 @@ func init() {
 	rootCmd.PersistentFlags().StringVar(&endpoint, "api-endpoint", viper.GetString("endpoint"), "API endpoint to use")
 	rootCmd.SetVersionTemplate("Valar CLI {{.Version}}\n")
 	rootCmd.Version = version
+	// Configure projects.go
+	initProjectsCmd()
+	// Configure deployments.go
+	initDeploymentsCmd()
+	// Configure builds.go
+	initBuildsCmd()
+	// Configure services.go
+	initServicesCmd()
 }
 
 func runAndHandle(f func(*cobra.Command, []string) error) func(*cobra.Command, []string) {

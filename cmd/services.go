@@ -26,7 +26,13 @@ var initCmd = &cobra.Command{
 	Short: "Configure a new service",
 	Args:  cobra.ExactArgs(1),
 	Run: runAndHandle(func(cmd *cobra.Command, args []string) error {
-		// TODO(lnsp): In case initProject is empty, fetch user name from server and use as project name
+		client, err := api.NewClient(endpoint, token)
+		if err != nil {
+			return err
+		}
+		if initProject == "" {
+			initProject = getDefaultProject(client)
+		}
 		if err := api.VerifyNames(initProject, args[0]); err != nil {
 			return fmt.Errorf("bad naming scheme: %w", err)
 		}
@@ -48,19 +54,23 @@ var listCmd = &cobra.Command{
 	Short: "Show services in the current project",
 	Args:  cobra.MaximumNArgs(1),
 	Run: runAndHandle(func(cmd *cobra.Command, args []string) error {
-		cfg := &config.ServiceConfig{}
-		if err := cfg.ReadFromFile(functionConfiguration); err != nil {
-			return err
-		}
 		client, err := api.NewClient(endpoint, token)
 		if err != nil {
 			return err
+		}
+		var project string
+		cfg := &config.ServiceConfig{}
+		if err := cfg.ReadFromFile(functionConfiguration); err != nil {
+			// Use default project
+			project = getDefaultProject(client)
+		} else {
+			project = cfg.Project
 		}
 		prefix := ""
 		if len(args) == 1 {
 			prefix = args[0]
 		}
-		services, err := client.ListServices(cfg.Project, prefix)
+		services, err := client.ListServices(project, prefix)
 		if err != nil {
 			return fmt.Errorf("listing services: %w", err)
 		}
@@ -154,14 +164,13 @@ var pushCmd = &cobra.Command{
 	}),
 }
 
-func init() {
+func initServicesCmd() {
 	initPf := initCmd.PersistentFlags()
 	initPf.StringArrayVarP(&initIgnore, "ignore", "i", []string{".valar.yml", ".git", "node_modules"}, "ignore files on push")
 	initPf.StringVarP(&initConstructor, "type", "t", "", "build constructor type")
-	initPf.StringVarP(&initProject, "project", "p", "", "project to deploy service to")
+	initPf.StringVarP(&initProject, "project", "p", "", "project to deploy service to, defaults to project set in global config")
 	initPf.BoolVarP(&initForce, "force", "f", false, "allow configuration override")
 	cobra.MarkFlagRequired(initPf, "type")
-	cobra.MarkFlagRequired(initPf, "project")
 	serviceLogsCmd.PersistentFlags().BoolVarP(&logsFollow, "follow", "f", false, "follow logs")
 	rootCmd.AddCommand(listCmd)
 	rootCmd.AddCommand(serviceLogsCmd)

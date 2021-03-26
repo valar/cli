@@ -27,10 +27,11 @@ valar config --api-endpoint https://api.valar.dev/v1 --api-token [YOUR TOKEN]
 
 ### Basics
 
-#### Set the default endpoint and token
+#### Set the default endpoint, token and project
 ```
-valar config --api-token=[api-token] --api-endpoint=[api-endpoint]
+valar config --api-token=[api-token] --api-endpoint=[api-endpoint] --project [default project to use]
 ```
+> You don't have to set the project if you don't want to. If you take actions while a service configuration is present, Valar will use the project defined there. If there is no such file, Valar will try to infer your default project by contacting the API service.
 
 ### Projects
 
@@ -47,9 +48,12 @@ valar project delete [project-name]
 ### Services
 #### Create local configuration
 ```bash
-valar init --type=[constructor] --project=[project-name] [service]
+valar init --type=[constructor] [--project=[project-name]] [service]
 ```
 > Valar supports a variety of constructors. If you are looking for an up-to-date list, please refer to [the official documentation](https://docs.valar.dev).
+
+> Using the `--project` flag is optional, if it is not defined a value will be inferred from the default project set via the `config` command or the projects supplied by the API service.
+
 #### Deploying a service
 ```bash
 valar push
@@ -79,6 +83,23 @@ valar deployments rollback [--delta 1]
 #### Delete a service [not implemented]
 ```bash
 valar delete [service]
+```
+
+### Environment variables
+
+#### Set a variable [not implemented]
+```bash
+valar env set [--build] [--secret] [key] [value]
+```
+
+#### List variables [not implemented]
+```bash
+valar env list [--build]
+```
+
+#### Delete a variable [not implemented]
+```bash
+valar env delete [--build] [key]
 ```
 
 ### Domains

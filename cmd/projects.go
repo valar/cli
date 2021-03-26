@@ -11,7 +11,10 @@ import (
 
 	"github.com/go-yaml/yaml"
 	"github.com/spf13/cobra"
+	"github.com/spf13/viper"
 )
+
+var configDefaultProject string
 
 var (
 	configCmd = &cobra.Command{
@@ -27,11 +30,15 @@ var (
 				return err
 			}
 			defer cfgfile.Close()
+			if configDefaultProject == "auto" {
+				configDefaultProject = ""
+			}
 			bytes, err := yaml.Marshal(struct {
-				APIToken    string `yaml:"token"`
-				APIEndpoint string `yaml:"endpoint"`
+				APIToken       string `yaml:"token"`
+				APIEndpoint    string `yaml:"endpoint"`
+				DefaultProject string `yaml:"defaultProject"`
 			}{
-				token, endpoint,
+				token, endpoint, configDefaultProject,
 			})
 			if err != nil {
 				return err
@@ -46,15 +53,19 @@ var (
 		Use:   "auth",
 		Short: "Manage project permissions",
 		Run: runAndHandle(func(cmd *cobra.Command, args []string) error {
-			cfg := &config.ServiceConfig{}
-			if err := cfg.ReadFromFile(functionConfiguration); err != nil {
-				return err
-			}
 			client, err := api.NewClient(endpoint, token)
 			if err != nil {
 				return err
 			}
-			pms, err := client.ListPermissions(cfg.Project)
+			var project string
+			cfg := &config.ServiceConfig{}
+			if err := cfg.ReadFromFile(functionConfiguration); err != nil {
+				// Use default project
+				project = getDefaultProject(client)
+			} else {
+				project = cfg.Project
+			}
+			pms, err := client.ListPermissions(project)
 			if err != nil {
 				return err
 			}
@@ -73,15 +84,19 @@ var (
 		Short: "Allow a user to perform a specific action",
 		Args:  cobra.ExactArgs(0),
 		Run: runAndHandle(func(cmd *cobra.Command, args []string) error {
-			cfg := &config.ServiceConfig{}
-			if err := cfg.ReadFromFile(functionConfiguration); err != nil {
-				return err
-			}
 			client, err := api.NewClient(endpoint, token)
 			if err != nil {
 				return err
 			}
-			if err := client.ModifyPermission(cfg.Project, authUser, authAction, false); err != nil {
+			var project string
+			cfg := &config.ServiceConfig{}
+			if err := cfg.ReadFromFile(functionConfiguration); err != nil {
+				// Use default project
+				project = getDefaultProject(client)
+			} else {
+				project = cfg.Project
+			}
+			if err := client.ModifyPermission(project, authUser, authAction, false); err != nil {
 				return err
 			}
 			return nil
@@ -92,15 +107,19 @@ var (
 		Short: "Forbid a user to perform a specific action",
 		Args:  cobra.ExactArgs(0),
 		Run: runAndHandle(func(cmd *cobra.Command, args []string) error {
-			cfg := &config.ServiceConfig{}
-			if err := cfg.ReadFromFile(functionConfiguration); err != nil {
-				return err
-			}
 			client, err := api.NewClient(endpoint, token)
 			if err != nil {
 				return err
 			}
-			if err := client.ModifyPermission(cfg.Project, authUser, authAction, true); err != nil {
+			var project string
+			cfg := &config.ServiceConfig{}
+			if err := cfg.ReadFromFile(functionConfiguration); err != nil {
+				// Use default project
+				project = getDefaultProject(client)
+			} else {
+				project = cfg.Project
+			}
+			if err := client.ModifyPermission(project, authUser, authAction, true); err != nil {
 				return err
 			}
 			return nil
@@ -108,7 +127,8 @@ var (
 	}
 )
 
-func init() {
+func initProjectsCmd() {
+	configCmd.Flags().StringVar(&configDefaultProject, "project", viper.GetString("defaultProject"), "default project to be used, set to auto to infer project from user info")
 	authCmd.AddCommand(authAllowCmd, authForbidCmd)
 	authForbidCmd.Flags().StringVarP(&authAction, "action", "a", "invoke", "Action to be modified")
 	authForbidCmd.Flags().StringVarP(&authUser, "user", "u", "anonymous", "User to be modified")

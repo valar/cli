@@ -24,11 +24,21 @@ type Client struct {
 	http *http.Client
 }
 
+func (client *Client) UserInfo() (*UserInfo, error) {
+	var userInfo UserInfo
+	if err := client.request(http.MethodGet, "/users/info", &userInfo, nil); err != nil {
+		return nil, err
+	}
+	return &userInfo, nil
+}
+
 func (client *Client) check() error {
 	var resp struct {
 		Version string `json:"version"`
 	}
-	client.request(http.MethodGet, "/", &resp, nil)
+	if err := client.request(http.MethodGet, "/", &resp, nil); err != nil {
+		return err
+	}
 	if resp.Version != "v1" {
 		return fmt.Errorf("client requires endpoint v1")
 	}
@@ -248,6 +258,11 @@ func (client *Client) SubmitDeploy(project, service, build string) (*Deployment,
 }
 
 type PermissionSet map[string][]string
+
+type UserInfo struct {
+	Name     string   `json:"name"`
+	Projects []string `json:"projects"`
+}
 
 type Service struct {
 	ID         string    `json:"id"`

@@ -175,7 +175,7 @@ func colorize(status string) string {
 	}
 }
 
-func init() {
+func initBuildsCmd() {
 	buildLogsCmd.PersistentFlags().BoolVarP(&logsFollow, "follow", "f", false, "follow the logs")
 	buildCmd.AddCommand(inspectCmd)
 	buildCmd.AddCommand(buildLogsCmd)
