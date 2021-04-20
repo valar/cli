@@ -55,6 +55,8 @@ func init() {
 	initBuildsCmd()
 	// Configure services.go
 	initServicesCmd()
+	// Configure env.go
+	initEnvCmd()
 }
 
 func runAndHandle(f func(*cobra.Command, []string) error) func(*cobra.Command, []string) {

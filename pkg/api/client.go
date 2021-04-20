@@ -1,6 +1,7 @@
 package api
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -95,8 +96,10 @@ func (client *Client) request(method, path string, obj interface{}, post io.Read
 	default:
 		return client.error(fmt.Errorf("bad response"), body)
 	}
-	if err := json.Unmarshal(body, obj); err != nil {
-		return fmt.Errorf("unmarshalling response: %w", err)
+	if obj != nil {
+		if err := json.Unmarshal(body, obj); err != nil {
+			return fmt.Errorf("unmarshalling response: %w", err)
+		}
 	}
 	return nil
 }
@@ -255,6 +258,48 @@ func (client *Client) SubmitDeploy(project, service, build string) (*Deployment,
 		return nil, err
 	}
 	return &depl, nil
+}
+
+func (client *Client) ListEnvironment(project, service, scope string) ([]KVPair, error) {
+	var (
+		kvs  []KVPair
+		path = fmt.Sprintf("/projects/%s/services/%s/env/%s", project, service, scope)
+	)
+	if err := client.request(http.MethodGet, path, &kvs, nil); err != nil {
+		return nil, err
+	}
+	return kvs, nil
+}
+
+func (client *Client) SetEnvironment(project, service, scope, key, value string, secret bool) error {
+	var (
+		kvpair, _ = json.Marshal(KVPair{
+			Key:    key,
+			Value:  value,
+			Secret: secret,
+		})
+		path = fmt.Sprintf("/projects/%s/services/%s/env/%s", project, service, scope)
+	)
+	if err := client.request(http.MethodPost, path, nil, bytes.NewBuffer(kvpair)); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (client *Client) DeleteEnvironment(project, service, scope, key string) error {
+	var (
+		path = fmt.Sprintf("/projects/%s/services/%s/env/%s/%s", project, service, scope, key)
+	)
+	if err := client.request(http.MethodDelete, path, nil, nil); err != nil {
+		return err
+	}
+	return nil
+}
+
+type KVPair struct {
+	Key    string `json:"key"`
+	Value  string `json:"value"`
+	Secret bool   `json:"secret"`
 }
 
 type PermissionSet map[string][]string

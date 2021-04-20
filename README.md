@@ -80,6 +80,7 @@ valar deployments create [buildid]
 ```bash
 valar deployments rollback [--delta 1]
 ```
+
 #### Delete a service [not implemented]
 ```bash
 valar delete [service]
@@ -87,19 +88,19 @@ valar delete [service]
 
 ### Environment variables
 
-#### Set a variable [not implemented]
+#### Set a variable
 ```bash
-valar env set [--build] [--secret] [key] [value]
+valar env set [--build] [--secret] [key]=[value]
 ```
 
-#### List variables [not implemented]
-```bash
-valar env list [--build]
-```
-
-#### Delete a variable [not implemented]
+#### Delete a variable
 ```bash
 valar env delete [--build] [key]
+```
+
+#### List variables
+```bash
+valar env [--build] [--format=(table|raw)]
 ```
 
 ### Domains
