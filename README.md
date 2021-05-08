@@ -105,14 +105,19 @@ valar env [--build] [--format=(table|raw)]
 
 ### Domains
 
-#### Add a domain [not implemented]
+#### Add a domain to a project [not implemented]
 ```bash
 valar domains add [domain]
 ```
 
-#### Link a domain (or subdomain) to a service [not implemented]
+#### Link a domain to a service [not implemented]
 ```
-valar domains link [domain] [service]
+valar domains link [domain]
+```
+
+#### Unlink a domain from a service [not implemented]
+```
+valar domains unlink [domain]
 ```
 
 #### Remove a domain and all domain links [not implemented]
