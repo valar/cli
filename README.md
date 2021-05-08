@@ -20,7 +20,7 @@ The API and authentication token can be supplied either via environment variable
 
 To supply the token and endpoint without an environment variable, use
 ```
-valar config --api-endpoint https://api.valar.dev/v1 --api-token [YOUR TOKEN]
+valar config --api-endpoint https://api.valar.dev/v2 --api-token [YOUR TOKEN]
 ```
 
 ## Usage
