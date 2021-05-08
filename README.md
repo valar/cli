@@ -56,7 +56,7 @@ valar init --type=[constructor] [--project=[project-name]] [service]
 
 #### Deploying a service
 ```bash
-valar push
+valar push [--skip-deploy]
 ```
 #### Listing all services in the project
 ```bash
@@ -68,17 +68,17 @@ valar logs [service]
 ```
 #### Listing all deployments of a service 
 ```bash
-valar deployments
+valar deploys
 ```
 
 #### Roll out a specific build
 ```bash
-valar deployments create [buildid]
+valar deploys create [buildid]
 ```
 
 #### Reverse service to the previous deployment
 ```bash
-valar deployments rollback [--delta 1]
+valar deploys rollback [--delta 1]
 ```
 
 #### Delete a service [not implemented]

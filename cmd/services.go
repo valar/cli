@@ -37,10 +37,12 @@ var initCmd = &cobra.Command{
 			return fmt.Errorf("bad naming scheme: %w", err)
 		}
 		cfg := &config.ServiceConfig{
-			Ignore:      initIgnore,
-			Project:     initProject,
-			Service:     args[0],
-			Constructor: initConstructor,
+			Project: initProject,
+			Service: args[0],
+			Build: config.BuildConfig{
+				Constructor: initConstructor,
+				Ignore:      initIgnore,
+			},
 		}
 		if _, err := os.Stat(functionConfiguration); err == nil && !initForce {
 			return fmt.Errorf("configuration already exists, please use --force flag to override")
@@ -116,34 +118,17 @@ var serviceLogsCmd = &cobra.Command{
 	}),
 }
 
-func pushFolder(cfg *config.ServiceConfig, folder string) (*api.Build, error) {
-	archivePath, err := util.CompressDir(folder, cfg.Ignore)
-	if err != nil {
-		return nil, fmt.Errorf("package compression failed: %w", err)
-	}
-	defer os.Remove(archivePath)
-	targzFile, err := os.Open(archivePath)
-	if err != nil {
-		return nil, fmt.Errorf("package archive failed: %w", err)
-	}
-	defer targzFile.Close()
-	client, err := api.NewClient(endpoint, token)
-	if err != nil {
-		return nil, err
-	}
-	task, err := client.SubmitBuild(cfg.Project, cfg.Service, cfg.Constructor, targzFile)
-	if err != nil {
-		return nil, err
-	}
-	return task, nil
-}
+var pushNoDeploy bool
 
 var pushCmd = &cobra.Command{
 	Use:   "push [folder]",
 	Short: "Push a new version to Valar",
 	Args:  cobra.MaximumNArgs(1),
 	Run: runAndHandle(func(cmd *cobra.Command, args []string) error {
-		// Load configuration
+		client, err := api.NewClient(endpoint, token)
+		if err != nil {
+			return err
+		}
 		cfg := &config.ServiceConfig{}
 		if err := cfg.ReadFromFile(functionConfiguration); err != nil {
 			return err
@@ -155,11 +140,37 @@ var pushCmd = &cobra.Command{
 		if len(args) != 0 {
 			folder = args[0]
 		}
-		task, err := pushFolder(cfg, folder)
+		// Upload archive artifact
+		archivePath, err := util.CompressDir(folder, cfg.Build.Ignore)
+		if err != nil {
+			return fmt.Errorf("package compression failed: %w", err)
+		}
+		defer os.Remove(archivePath)
+		targzFile, err := os.Open(archivePath)
+		if err != nil {
+			return fmt.Errorf("package archive failed: %w", err)
+		}
+		defer targzFile.Close()
+		artifact, err := client.SubmitArtifact(cfg.Project, cfg.Service, targzFile)
 		if err != nil {
 			return err
 		}
-		fmt.Println(task.ID)
+		// Submit build request
+		var buildReq api.BuildRequest
+		buildReq.Artifact = artifact.Artifact
+		buildReq.Build.Constructor = cfg.Build.Constructor
+		for _, kv := range cfg.Build.Environment {
+			buildReq.Build.Environment = append(buildReq.Build.Environment, api.KVPair(kv))
+		}
+		buildReq.Deployment.Skip = pushNoDeploy
+		for _, kv := range cfg.Deployment.Environment {
+			buildReq.Deployment.Environment = append(buildReq.Deployment.Environment, api.KVPair(kv))
+		}
+		build, err := client.SubmitBuild(cfg.Project, cfg.Service, &buildReq)
+		if err != nil {
+			return err
+		}
+		fmt.Println(build.ID)
 		return nil
 	}),
 }
@@ -175,5 +186,6 @@ func initServicesCmd() {
 	rootCmd.AddCommand(listCmd)
 	rootCmd.AddCommand(serviceLogsCmd)
 	rootCmd.AddCommand(initCmd)
+	pushCmd.Flags().BoolVarP(&pushNoDeploy, "skip-deploy", "s", false, "Only build, skip deploy action")
 	rootCmd.AddCommand(pushCmd)
 }

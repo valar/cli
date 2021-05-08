@@ -40,8 +40,8 @@ func (client *Client) check() error {
 	if err := client.request(http.MethodGet, "/", &resp, nil); err != nil {
 		return err
 	}
-	if resp.Version != "v1" {
-		return fmt.Errorf("client requires endpoint v1")
+	if resp.Version != "v2" {
+		return fmt.Errorf("client requires endpoint v2")
 	}
 	return nil
 }
@@ -138,16 +138,29 @@ func (client *Client) StreamServiceLogs(project, service string, w io.Writer) er
 	return nil
 }
 
-// SubmitBuild submits a new build task to the server.
-func (client *Client) SubmitBuild(project, service, constructor string, archive io.ReadCloser) (*Build, error) {
+// SubmitArtifact submits a new build input artifact to the server.
+func (client *Client) SubmitArtifact(project, service string, archive io.ReadCloser) (*Artifact, error) {
 	var (
-		task Build
-		path = fmt.Sprintf("/projects/%s/services/%s/builds?constructor=%s", project, service, constructor)
+		artifact Artifact
+		path     = fmt.Sprintf("/projects/%s/services/%s/artifacts", project, service)
 	)
-	if err := client.request(http.MethodPost, path, &task, archive); err != nil {
+	if err := client.request(http.MethodPost, path, &artifact, archive); err != nil {
 		return nil, err
 	}
-	return &task, nil
+	return &artifact, nil
+}
+
+// SubmitBuild submits a new build task to the server.
+func (client *Client) SubmitBuild(project, service string, buildRequest *BuildRequest) (*Build, error) {
+	var (
+		payload, _ = json.Marshal(buildRequest)
+		build      Build
+		path       = fmt.Sprintf("/projects/%s/services/%s/builds", project, service)
+	)
+	if err := client.request(http.MethodPost, path, &build, bytes.NewReader(payload)); err != nil {
+		return nil, err
+	}
+	return &build, nil
 }
 
 // AbortBuild aborts a scheduled or running build.
@@ -240,7 +253,7 @@ func (client *Client) ModifyPermission(project, user, action string, forbid bool
 func (client *Client) ListDeployments(project, service string) ([]Deployment, error) {
 	var (
 		depls []Deployment
-		path  = fmt.Sprintf("/projects/%s/services/%s/deployments", project, service)
+		path  = fmt.Sprintf("/projects/%s/services/%s/deploys", project, service)
 	)
 	if err := client.request(http.MethodGet, path, &depls, nil); err != nil {
 		return nil, err
@@ -249,51 +262,49 @@ func (client *Client) ListDeployments(project, service string) ([]Deployment, er
 }
 
 // SubmitDeploy submits a new deployment of the given build.
-func (client *Client) SubmitDeploy(project, service, build string) (*Deployment, error) {
+func (client *Client) SubmitDeploy(project, service string, deploy *DeployRequest) (*Deployment, error) {
 	var (
-		depl Deployment
-		path = fmt.Sprintf("/projects/%s/services/%s/builds/%s/deploy", project, service, build)
+		payload, _ = json.Marshal(deploy)
+		depl       Deployment
+		path       = fmt.Sprintf("/projects/%s/services/%s/deploys", project, service)
 	)
-	if err := client.request(http.MethodPost, path, &depl, nil); err != nil {
+	if err := client.request(http.MethodPost, path, &depl, bytes.NewReader(payload)); err != nil {
 		return nil, err
 	}
 	return &depl, nil
 }
 
-func (client *Client) ListEnvironment(project, service, scope string) ([]KVPair, error) {
+func (client *Client) EncryptEnvironment(project, service string, kvpair *KVPair) (*KVPair, error) {
 	var (
-		kvs  []KVPair
-		path = fmt.Sprintf("/projects/%s/services/%s/env/%s", project, service, scope)
+		payload, _ = json.Marshal(kvpair)
+		encrypted  KVPair
+		path       = fmt.Sprintf("/projects/%s/environment/encrypt", project)
 	)
-	if err := client.request(http.MethodGet, path, &kvs, nil); err != nil {
+	if err := client.request(http.MethodPost, path, &encrypted, bytes.NewReader(payload)); err != nil {
 		return nil, err
 	}
-	return kvs, nil
+	return &encrypted, nil
 }
 
-func (client *Client) SetEnvironment(project, service, scope, key, value string, secret bool) error {
-	var (
-		kvpair, _ = json.Marshal(KVPair{
-			Key:    key,
-			Value:  value,
-			Secret: secret,
-		})
-		path = fmt.Sprintf("/projects/%s/services/%s/env/%s", project, service, scope)
-	)
-	if err := client.request(http.MethodPost, path, nil, bytes.NewBuffer(kvpair)); err != nil {
-		return err
-	}
-	return nil
+type Artifact struct {
+	Artifact string `json:"artifact"`
 }
 
-func (client *Client) DeleteEnvironment(project, service, scope, key string) error {
-	var (
-		path = fmt.Sprintf("/projects/%s/services/%s/env/%s/%s", project, service, scope, key)
-	)
-	if err := client.request(http.MethodDelete, path, nil, nil); err != nil {
-		return err
-	}
-	return nil
+type DeployRequest struct {
+	Build       string   `json:"build,omitempty"`
+	Environment []KVPair `json:"environment"`
+}
+
+type BuildRequest struct {
+	Artifact string `json:"artifact"`
+	Build    struct {
+		Constructor string   `json:"constructor"`
+		Environment []KVPair `json:"environment"`
+	} `json:"build"`
+	Deployment struct {
+		Skip        bool     `json:"skip"`
+		Environment []KVPair `json:"environment"`
+	} `json:"deployment"`
 }
 
 type KVPair struct {

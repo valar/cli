@@ -4,15 +4,74 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strings"
 
-	"gopkg.in/yaml.v2"
+	"gopkg.in/yaml.v3"
 )
 
+type EnvironmentConfig struct {
+	Key, Value string
+	Secret     bool
+}
+
+func (e *EnvironmentConfig) MarshalYAML() (interface{}, error) {
+	if e.Secret {
+		return struct {
+			Key    string `yaml:"key,omitempty"`
+			Value  string `yaml:"value,omitempty"`
+			Secret bool   `yaml:"secret,omitempty"`
+		}{
+			Key:    e.Key,
+			Value:  e.Value,
+			Secret: e.Secret,
+		}, nil
+	}
+	return e.Key + "=" + e.Value, nil
+}
+
+func (e *EnvironmentConfig) UnmarshalYAML(value *yaml.Node) error {
+	// Try to parse as raw string first
+	var raw string
+	if err := value.Decode(&raw); err == nil {
+		envpair := strings.SplitN(raw, "=", 2)
+		if len(envpair) != 2 {
+			return fmt.Errorf("envvar in raw form has to be KEY=VALUE")
+		}
+		e.Key = envpair[0]
+		e.Value = envpair[1]
+		return nil
+	}
+	// Try to parse as struct
+	var structured struct {
+		Key    string `yaml:"key,omitempty"`
+		Value  string `yaml:"value,omitempty"`
+		Secret bool   `yaml:"secret,omitempty"`
+	}
+	if err := value.Decode(&structured); err != nil {
+		return fmt.Errorf("envvar has to be in raw or structured form")
+	}
+	e.Key = structured.Key
+	e.Value = structured.Value
+	e.Secret = structured.Secret
+	return nil
+}
+
+type BuildConfig struct {
+	Constructor string              `yaml:"constructor,omitempty"`
+	Ignore      []string            `yaml:"ignore"`
+	Environment []EnvironmentConfig `yaml:"environment"`
+}
+
+type DeploymentConfig struct {
+	Skip        bool                `yaml:"skip"`
+	Environment []EnvironmentConfig `yaml:"environment"`
+}
+
 type ServiceConfig struct {
-	Project     string   `yaml:"project,omitempty"`
-	Service     string   `yaml:"service,omitempty"`
-	Constructor string   `yaml:"constructor,omitempty"`
-	Ignore      []string `yaml:"ignore"`
+	Project    string           `yaml:"project,omitempty"`
+	Service    string           `yaml:"service,omitempty"`
+	Build      BuildConfig      `yaml:"build,omitempty"`
+	Deployment DeploymentConfig `yaml:"deployment"`
 }
 
 func (config *ServiceConfig) ReadFromFile(path string) error {

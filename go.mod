@@ -11,5 +11,6 @@ require (
 	github.com/mholt/archiver/v3 v3.3.0
 	github.com/spf13/cobra v0.0.5
 	github.com/spf13/viper v1.5.0
-	gopkg.in/yaml.v2 v2.2.5
+	gopkg.in/yaml.v2 v2.2.5 // indirect
+	gopkg.in/yaml.v3 v3.0.0-20210107192922-496545a6307b
 )

@@ -15,7 +15,7 @@ import (
 )
 
 var deploymentCmd = &cobra.Command{
-	Use:   "deployments",
+	Use:   "deploys",
 	Short: "List deployments of the service",
 	Args:  cobra.NoArgs,
 	Run: runAndHandle(func(cmd *cobra.Command, args []string) error {
@@ -79,10 +79,14 @@ func rollbackLatestDeployment(client *api.Client, cfg *config.ServiceConfig) err
 	sort.Slice(deployments, func(i, j int) bool {
 		return deployments[i].Version > deployments[j].Version
 	})
-	// Pick build from deployment 1
-	build := deployments[rollbackDelta].Build
 	// Deploy build
-	rollback, err := client.SubmitDeploy(cfg.Project, cfg.Service, build)
+	var deployReq api.DeployRequest
+	deployReq.Build = deployments[rollbackDelta].Build
+	// TODO(lnsp): Use environment variables from target rollback deployment instead of local ones
+	for _, kv := range cfg.Deployment.Environment {
+		deployReq.Environment = append(deployReq.Environment, api.KVPair(kv))
+	}
+	rollback, err := client.SubmitDeploy(cfg.Project, cfg.Service, &deployReq)
 	if err != nil {
 		return err
 	}
@@ -100,13 +104,14 @@ func listDeployments(client *api.Client, cfg *config.ServiceConfig) error {
 		return deployments[i].Version < deployments[j].Version
 	})
 	tw := ansiterm.NewTabWriter(os.Stdout, 6, 0, 1, ' ', 0)
-	fmt.Fprintln(tw, "Version\tStatus\tCreated\tBuild")
+	fmt.Fprintln(tw, "Version\tStatus\tCreated\tBuild\tError")
 	for _, d := range deployments {
 		fmt.Fprintln(tw, strings.Join([]string{
 			strconv.FormatInt(d.Version, 10),
 			colorize(d.Status),
 			humanize.Time(d.CreatedAt),
 			d.Build,
+			d.Error,
 		}, "\t"))
 	}
 	tw.Flush()
