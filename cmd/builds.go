@@ -152,7 +152,12 @@ func inspectBuild(client *api.Client, cfg *config.ServiceConfig, id string) erro
 }
 
 func deployBuild(client *api.Client, cfg *config.ServiceConfig, id string) error {
-	deployment, err := client.SubmitDeploy(cfg.Project, cfg.Service, id)
+	var deployReq api.DeployRequest
+	deployReq.Build = id
+	for _, kv := range cfg.Deployment.Environment {
+		deployReq.Environment = append(deployReq.Environment, api.KVPair(kv))
+	}
+	deployment, err := client.SubmitDeploy(cfg.Project, cfg.Service, &deployReq)
 	if err != nil {
 		return err
 	}
@@ -162,7 +167,7 @@ func deployBuild(client *api.Client, cfg *config.ServiceConfig, id string) error
 
 func colorize(status string) string {
 	switch status {
-	case "scheduled":
+	case "scheduled", "waiting":
 		return color.HiYellowString("%s", status)
 	case "building", "releasing", "binding":
 		return color.YellowString("%s", status)
