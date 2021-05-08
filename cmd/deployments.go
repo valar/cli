@@ -79,18 +79,14 @@ func rollbackLatestDeployment(client *api.Client, cfg *config.ServiceConfig) err
 	sort.Slice(deployments, func(i, j int) bool {
 		return deployments[i].Version > deployments[j].Version
 	})
-	// Deploy build
-	var deployReq api.DeployRequest
-	deployReq.Build = deployments[rollbackDelta].Build
-	// TODO(lnsp): Use environment variables from target rollback deployment instead of local ones
-	for _, kv := range cfg.Deployment.Environment {
-		deployReq.Environment = append(deployReq.Environment, api.KVPair(kv))
-	}
-	rollback, err := client.SubmitDeploy(cfg.Project, cfg.Service, &deployReq)
+	// Get targeted version identifier
+	deployment, err := client.RollbackDeploy(cfg.Project, cfg.Service, &api.RollbackRequest{
+		Version: deployments[rollbackDelta].Version,
+	})
 	if err != nil {
 		return err
 	}
-	fmt.Println(rollback.Status)
+	fmt.Println(deployment.Version)
 	return nil
 }
 

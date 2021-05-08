@@ -274,6 +274,19 @@ func (client *Client) SubmitDeploy(project, service string, deploy *DeployReques
 	return &depl, nil
 }
 
+// RollbackDeploy rolls back to a previous deployment.
+func (client *Client) RollbackDeploy(project, service string, rollback *RollbackRequest) (*Deployment, error) {
+	var (
+		payload, _ = json.Marshal(rollback)
+		depl       Deployment
+		path       = fmt.Sprintf("/projects/%s/services/%s/deploys/rollback", project, service)
+	)
+	if err := client.request(http.MethodPost, path, &depl, bytes.NewReader(payload)); err != nil {
+		return nil, err
+	}
+	return &depl, nil
+}
+
 func (client *Client) EncryptEnvironment(project, service string, kvpair *KVPair) (*KVPair, error) {
 	var (
 		payload, _ = json.Marshal(kvpair)
@@ -284,6 +297,10 @@ func (client *Client) EncryptEnvironment(project, service string, kvpair *KVPair
 		return nil, err
 	}
 	return &encrypted, nil
+}
+
+type RollbackRequest struct {
+	Version int64 `json:"version"`
 }
 
 type Artifact struct {
