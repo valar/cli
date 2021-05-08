@@ -115,6 +115,11 @@ valar domains add [domain]
 valar domains link [domain]
 ```
 
+### Verify a domain [not implemented]
+```
+valar domains verify [domain]
+```
+
 #### Unlink a domain from a service [not implemented]
 ```
 valar domains unlink [domain]
