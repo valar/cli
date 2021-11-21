@@ -9,10 +9,10 @@ jobs:
     name: Build
     runs-on: ubuntu-latest
     steps:
-    - name: Set up Go 1.13
+    - name: Set up Go 1.17
       uses: actions/setup-go@v1
       with:
-        go-version: 1.13
+        go-version: 1.17
     - name: Check out code into the Go module directory
       uses: actions/checkout@v1
     - name: Get dependencies
@@ -23,11 +23,17 @@ jobs:
       run: |
         CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -a -tags netgo -ldflags "-X valar/cli/cmd.version=$VALAR_VERSION -s -w -extldflags \"-static\"" -o valar_linux_amd64 .
         CGO_ENABLED=0 GOOS=linux GOARCH=arm go build -a -tags netgo -ldflags "-X valar/cli/cmd.version=$VALAR_VERSION -s -w -extldflags \"-static\"" -o valar_linux_arm .
+        CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -a -tags netgo -ldflags "-X valar/cli/cmd.version=$VALAR_VERSION -s -w -extldflags \"-static\"" -o valar_linux_arm64 .
         CGO_ENABLED=0 GOOS=darwin GOARCH=amd64 go build -a -tags netgo -ldflags "-X valar/cli/cmd.version=$VALAR_VERSION -s -w -extldflags \"-static\"" -o valar_darwin_amd64 .
+        CGO_ENABLED=0 GOOS=darwin GOARCH=arm64 go build -a -tags netgo -ldflags "-X valar/cli/cmd.version=$VALAR_VERSION -s -w -extldflags \"-static\"" -o valar_darwin_arm64 .
     - uses: actions/upload-artifact@v2
       with:
         name: valar_darwin_amd64
         path: valar_darwin_amd64
+    - uses: actions/upload-artifact@v2
+      with:
+        name: valar_darwin_arm64
+        path: valar_darwin_arm64
     - uses: actions/upload-artifact@v2
       with:
         name: valar_linux_amd64
@@ -36,6 +42,10 @@ jobs:
       with:
         name: valar_linux_arm
         path: valar_linux_arm
+    - uses: actions/upload-artifact@v2
+      with:
+        name: valar_linux_arm64
+        path: valar_linux_arm64
   release:
     name: Release
     runs-on: ubuntu-latest
@@ -46,10 +56,16 @@ jobs:
         name: valar_linux_arm
     - uses: actions/download-artifact@v2
       with:
+        name: valar_linux_arm64
+    - uses: actions/download-artifact@v2
+      with:
         name: valar_linux_amd64
     - uses: actions/download-artifact@v2
       with:
         name: valar_darwin_amd64
+    - uses: actions/download-artifact@v2
+      with:
+        name: valar_darwin_arm64
     - name: Create Release
       id: create_release
       uses: actions/create-release@v1
@@ -69,6 +85,15 @@ jobs:
         asset_path: ./valar_linux_amd64
         asset_name: valar_linux_amd64
         asset_content_type: binary/octet-stream
+    - name: Upload release asset (linux_arm64)
+      uses: actions/upload-release-asset@v1.0.1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ steps.create_release.outputs.upload_url }}
+        asset_path: ./valar_linux_arm64
+        asset_name: valar_linux_arm64
+        asset_content_type: binary/octet-stream
     - name: Upload release asset (linux_arm)
       uses: actions/upload-release-asset@v1.0.1
       env:
@@ -86,6 +111,15 @@ jobs:
         upload_url: ${{ steps.create_release.outputs.upload_url }}
         asset_path: ./valar_darwin_amd64
         asset_name: valar_darwin_amd64
+        asset_content_type: binary/octet-stream
+    - name: Upload release asset (darwin_arm64)
+      uses: actions/upload-release-asset@v1.0.1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ steps.create_release.outputs.upload_url }}
+        asset_path: ./valar_darwin_arm64
+        asset_name: valar_darwin_arm64
         asset_content_type: binary/octet-stream
   homebrew: 
     name: "Update homebrew formula"
