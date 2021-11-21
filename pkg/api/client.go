@@ -299,6 +299,65 @@ func (client *Client) EncryptEnvironment(project, service string, kvpair *KVPair
 	return &encrypted, nil
 }
 
+func (client *Client) ListDomains(project string) ([]Domain, error) {
+	var (
+		path    = fmt.Sprintf("/projects/%s/domains", project)
+		domains []Domain
+	)
+	if err := client.request(http.MethodGet, path, &domains, nil); err != nil {
+		return nil, err
+	}
+	return domains, nil
+}
+
+func (client *Client) AddDomain(project, domain string) (map[string]string, error) {
+	var (
+		records    = make(map[string]string)
+		path       = fmt.Sprintf("/projects/%s/domains", project)
+		payload, _ = json.Marshal(struct {
+			Domain string `json:"domain"`
+		}{domain})
+	)
+	if err := client.request(http.MethodPost, path, &records, bytes.NewReader(payload)); err != nil {
+		return nil, err
+	}
+	return records, nil
+}
+
+func (client *Client) LinkDomain(project, domain, service string) error {
+	var (
+		path       = fmt.Sprintf("/projects/%s/domains/%s/link", project, domain)
+		payload, _ = json.Marshal(struct {
+			Service string `json:"service"`
+		}{service})
+	)
+	if err := client.request(http.MethodPost, path, nil, bytes.NewReader(payload)); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (client *Client) VerifyDomain(project, domain string) (*Domain, error) {
+	var (
+		path = fmt.Sprintf("/projects/%s/domains/%s/verify", project, domain)
+		dom  Domain
+	)
+	if err := client.request(http.MethodPost, path, &dom, nil); err != nil {
+		return nil, err
+	}
+	return &dom, nil
+}
+
+type Domain struct {
+	Project    string    `json:"project"`
+	Domain     string    `json:"domain"`
+	Token      string    `json:"token"`
+	Verified   bool      `json:"verified"`
+	Expiration time.Time `json:"expiration"`
+	Error      string    `json:"error"`
+	Service    *string   `json:"service"`
+}
+
 type RollbackRequest struct {
 	Version int64 `json:"version"`
 }

@@ -105,28 +105,34 @@ valar env [--build] [--format=(table|raw)]
 
 ### Domains
 
-#### Add a domain to a project [not implemented]
+#### List all domains attached to a project
+```bash
+valar domains
+```
+
+#### Add a domain to a project
 ```bash
 valar domains add [domain]
 ```
 
-#### Link a domain to a service [not implemented]
-```
-valar domains link [domain]
-```
-
-### Verify a domain [not implemented]
-```
+#### Verify a domain
+```bash
 valar domains verify [domain]
 ```
 
-#### Unlink a domain from a service [not implemented]
+
+#### Link a domain to a service
+```bash
+valar domains link [domain] ([service])
 ```
+
+#### Unlink a domain from a service [not implemented]
+```bash
 valar domains unlink [domain]
 ```
 
 #### Remove a domain and all domain links [not implemented]
-```
+```bash
 valar domains delete [domain]
 ```
 
