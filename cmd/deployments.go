@@ -23,7 +23,7 @@ var deploymentCmd = &cobra.Command{
 		if err := cfg.ReadFromFile(functionConfiguration); err != nil {
 			return err
 		}
-		client, err := api.NewClient(endpoint, token)
+		client, err := globalConfiguration.APIClient()
 		if err != nil {
 			return err
 		}
@@ -40,7 +40,7 @@ var createCmd = &cobra.Command{
 		if err := cfg.ReadFromFile(functionConfiguration); err != nil {
 			return err
 		}
-		client, err := api.NewClient(endpoint, token)
+		client, err := globalConfiguration.APIClient()
 		if err != nil {
 			return err
 		}
@@ -59,7 +59,7 @@ var rollbackCmd = &cobra.Command{
 		if err := cfg.ReadFromFile(functionConfiguration); err != nil {
 			return err
 		}
-		client, err := api.NewClient(endpoint, token)
+		client, err := globalConfiguration.APIClient()
 		if err != nil {
 			return err
 		}

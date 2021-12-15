@@ -3,7 +3,6 @@ package cmd
 import (
 	"fmt"
 	"os"
-	"valar/cli/pkg/api"
 	"valar/cli/pkg/config"
 
 	"github.com/juju/ansiterm"
@@ -19,7 +18,7 @@ var domainsCmd = &cobra.Command{
 		if err := cfg.ReadFromFile(functionConfiguration); err != nil {
 			return err
 		}
-		client, err := api.NewClient(endpoint, token)
+		client, err := globalConfiguration.APIClient()
 		if err != nil {
 			return err
 		}
@@ -50,7 +49,7 @@ var domainsAddCmd = &cobra.Command{
 		if err := cfg.ReadFromFile(functionConfiguration); err != nil {
 			return err
 		}
-		client, err := api.NewClient(endpoint, token)
+		client, err := globalConfiguration.APIClient()
 		if err != nil {
 			return err
 		}
@@ -78,7 +77,7 @@ var domainsVerifyCmd = &cobra.Command{
 		if err := cfg.ReadFromFile(functionConfiguration); err != nil {
 			return err
 		}
-		client, err := api.NewClient(endpoint, token)
+		client, err := globalConfiguration.APIClient()
 		if err != nil {
 			return err
 		}
@@ -100,7 +99,7 @@ var domainsLinkCmd = &cobra.Command{
 		if err := cfg.ReadFromFile(functionConfiguration); err != nil {
 			return err
 		}
-		client, err := api.NewClient(endpoint, token)
+		client, err := globalConfiguration.APIClient()
 		if err != nil {
 			return err
 		}

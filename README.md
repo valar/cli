@@ -16,33 +16,71 @@ curl -sSL https://cli.valar.dev | bash -
 
 ## Configuration
 
-The API and authentication token can be supplied either via environment variable `VALAR_TOKEN` or via flag `--api-token`. The API endpoint URL has to be supplied via environment variable `VALAR_ENDPOINT` or via flag `--api-endpoint`.
-
-To supply the token and endpoint without an environment variable, use
-```
-valar config --api-endpoint https://api.valar.dev/v2 --api-token [YOUR TOKEN]
+```bash
+# Add the Valar API endpoint
+valar config endpoint add default --token=[your-api-token] --url=https://api.valar.dev/v2
+# Add a new project context
+valar config context add default --project=[your-project] --endpoint=default
+# Set the configured context as the default one
+valar config context use default
 ```
 
 ## Usage
 
-### Basics
+### Configuration
 
-#### Set the default endpoint, token and project
+> By default, Valar uses the default valarconfig file in `$HOME/.valar/config`. If the `VALARCONFIG` environment variable does exist, `valar` uses the an effective configuration that is the result of merging the files listed in the `VALARCONFIG` variable.
+
+#### Dump the current configuration as YAML
 ```
-valar config --api-token=[api-token] --api-endpoint=[api-endpoint] --project [default project to use]
+valar config view
 ```
-> You don't have to set the project if you don't want to. If you take actions while a service configuration is present, Valar will use the project defined there. If there is no such file, Valar will try to infer your default project by contacting the API service.
+
+#### Add an API endpoint
+```
+valar config endpoint set [endpoint] --token=[api-token] --url=[endpoint-url]
+```
+
+#### List configured API endpoints
+```
+valar config endpoint
+```
+
+#### Remove an API endpoint
+```
+valar config endpoint remove [endpoint]
+```
+
+#### Add a configuration context
+```
+valar config context set [context] --project=[project] --endpoint=[endpoint]
+```
+
+#### List configured CLI contexts
+```
+valar config context
+```
+
+#### Set a context as the default one
+```
+valar config context use [context]
+```
+
+#### Remove a configuration context
+```
+valar config context remove [context]
+```
 
 ### Projects
 
 #### Set up a new project <span style="color: grey">[not implemented]</span>
 ```
-valar project create [--public] [project-name]
+valar projects create [--public] [project-name]
 ```
 > Public projects can be invoked by any anonymous person.
 #### Delete a project <span style="color: grey">[not implemented]</span>
 ```bash
-valar project delete [project-name]
+valar projects delete [project-name]
 ```
 > Destroying a project deletes all services and configuration associated with it. Use with care.
 ### Services

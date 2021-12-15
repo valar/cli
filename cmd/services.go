@@ -26,12 +26,8 @@ var initCmd = &cobra.Command{
 	Short: "Configure a new service",
 	Args:  cobra.ExactArgs(1),
 	Run: runAndHandle(func(cmd *cobra.Command, args []string) error {
-		client, err := api.NewClient(endpoint, token)
-		if err != nil {
-			return err
-		}
 		if initProject == "" {
-			initProject = getDefaultProject(client)
+			initProject = globalConfiguration.Project()
 		}
 		if err := api.VerifyNames(initProject, args[0]); err != nil {
 			return fmt.Errorf("bad naming scheme: %w", err)
@@ -56,15 +52,14 @@ var listCmd = &cobra.Command{
 	Short: "Show services in the current project",
 	Args:  cobra.MaximumNArgs(1),
 	Run: runAndHandle(func(cmd *cobra.Command, args []string) error {
-		client, err := api.NewClient(endpoint, token)
+		client, err := globalConfiguration.APIClient()
 		if err != nil {
 			return err
 		}
 		var project string
 		cfg := &config.ServiceConfig{}
 		if err := cfg.ReadFromFile(functionConfiguration); err != nil {
-			// Use default project
-			project = getDefaultProject(client)
+			project = globalConfiguration.Project()
 		} else {
 			project = cfg.Project
 		}
@@ -104,7 +99,7 @@ var serviceLogsCmd = &cobra.Command{
 		if err := cfg.ReadFromFile(functionConfiguration); err != nil {
 			return err
 		}
-		client, err := api.NewClient(endpoint, token)
+		client, err := globalConfiguration.APIClient()
 		if err != nil {
 			return err
 		}
@@ -125,7 +120,7 @@ var pushCmd = &cobra.Command{
 	Short: "Push a new version to Valar",
 	Args:  cobra.MaximumNArgs(1),
 	Run: runAndHandle(func(cmd *cobra.Command, args []string) error {
-		client, err := api.NewClient(endpoint, token)
+		client, err := globalConfiguration.APIClient()
 		if err != nil {
 			return err
 		}
