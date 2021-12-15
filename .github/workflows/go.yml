@@ -144,7 +144,7 @@ jobs:
           echo ::set-output name=version::${GITHUB_REF/refs\/tags\//}
           echo ::set-output name=short_version::$(echo ${GITHUB_REF/refs\/tags\//} | cut -c2-)
       - name: Get sha256
-        run: echo ::set-output name=sha::"$(curl https://github.com/valar/cli/archive/${{ steps.get_version.outputs.version }}.tar.gz | shasum -a 256 -)"
+        run: echo ::set-output name=sha::"$(curl -sSL https://codeload.github.com/valar/cli/tar.gz/${{ steps.get_version.outputs.version }} | shasum -a 256 | awk '{printf $1}')"
       - name: Bump Brew
         env:
           SSH_AUTH_SOCK: /tmp/ssh_agent.sock
