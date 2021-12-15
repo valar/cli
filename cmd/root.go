@@ -4,10 +4,11 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"valar/cli/pkg/api"
 
 	"github.com/spf13/cobra"
-	"github.com/spf13/viper"
+	"gopkg.in/yaml.v3"
 )
 
 var version string
@@ -19,32 +20,113 @@ var rootCmd = &cobra.Command{
 
 You code. We do the rest.
 We take care while you do what you do best.`,
+	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+		cfgpath, ok := os.LookupEnv("VALARCONFIG")
+		if !ok {
+			homedir, err := os.UserHomeDir()
+			if err != nil {
+				return fmt.Errorf("load config: %w", err)
+			}
+			dirpath := filepath.Join(homedir, ".valar")
+			// Make sure dirpath exists
+			if err := os.MkdirAll(dirpath, 0755); err != nil {
+				return fmt.Errorf("load config: %w", err)
+			}
+			// Make sure config exists
+			cfgpath = filepath.Join(dirpath, "config")
+			// Make sure ~/.valar/config exists, best effort
+			if _, err := os.Stat(cfgpath); err != nil {
+				f, err := os.Create(cfgpath)
+				if err != nil {
+					return fmt.Errorf("create empty config: %w", err)
+				}
+				f.Close()
+			}
+		}
+		// Load files from cfgpath and merge them
+		cfgpaths := strings.Split(cfgpath, ";")
+		cfg := valarConfig{
+			Endpoints: make(map[string]valarEndpoint),
+			Contexts:  make(map[string]valarContext),
+		}
+		for _, path := range cfgpaths {
+			data, err := os.ReadFile(path)
+			if err != nil {
+				return fmt.Errorf("read config: %w", err)
+			}
+			// Decode config
+			var subcfg valarConfig
+			if err := yaml.Unmarshal(data, &subcfg); err != nil {
+				return fmt.Errorf("unmarshal config: %w", err)
+			}
+			// Override cfg
+			if subcfg.ActiveContext != "" {
+				cfg.ActiveContext = subcfg.ActiveContext
+			}
+			for name, ctx := range subcfg.Contexts {
+				cfg.Contexts[name] = ctx
+			}
+			for name, ep := range subcfg.Endpoints {
+				cfg.Endpoints[name] = ep
+			}
+		}
+		// Extract project, token, endpoint
+		cfg.Path = cfgpaths[len(cfgpaths)-1]
+		globalConfiguration = cfg
+		return nil
+	},
 }
 
-var token, endpoint string
+var globalConfiguration valarConfig
 
-func getDefaultProject(client *api.Client) string {
-	defaultProject := viper.GetString("defaultProject")
-	if defaultProject != "" {
-		return defaultProject
+type valarConfig struct {
+	ActiveContext string                   `yaml:"activeContext"`
+	Endpoints     map[string]valarEndpoint `yaml:"endpoints"`
+	Contexts      map[string]valarContext  `yaml:"contexts"`
+
+	Path string `yaml:"-"`
+}
+
+func (cfg *valarConfig) Token() string {
+	return cfg.Endpoints[cfg.Contexts[cfg.ActiveContext].Endpoint].Token
+}
+
+func (cfg *valarConfig) Endpoint() string {
+	return cfg.Endpoints[cfg.Contexts[cfg.ActiveContext].Endpoint].URL
+}
+
+func (cfg *valarConfig) Project() string {
+	return cfg.Contexts[cfg.ActiveContext].Project
+}
+
+func (cfg *valarConfig) APIClient() (*api.Client, error) {
+	return api.NewClient(cfg.Endpoint(), cfg.Token())
+}
+
+func (cfg *valarConfig) Write() error {
+	f, err := os.Create(cfg.Path)
+	if err != nil {
+		return fmt.Errorf("create config: %w", err)
 	}
-	userInfo, err := client.UserInfo()
-	if err != nil || len(userInfo.Projects) == 0 {
-		return defaultProject
-	}
-	return userInfo.Projects[0]
+	defer f.Close()
+	encoder := yaml.NewEncoder(f)
+	defer encoder.Close()
+	encoder.SetIndent(2)
+	return encoder.Encode(cfg)
+}
+
+type valarEndpoint struct {
+	Token string `yaml:"token"`
+	URL   string `yaml:"url"`
+}
+
+type valarContext struct {
+	Endpoint string `yaml:"endpoint"`
+	Project  string `yaml:"project"`
 }
 
 func init() {
 	// Try to load config, if not found we're fine
-	homedir, _ := os.UserHomeDir()
-	viper.SetConfigFile(filepath.Join(homedir, ".valar/valarcfg"))
-	viper.SetConfigType("yaml")
-	viper.SetEnvPrefix("VALAR")
-	viper.AutomaticEnv()
-	viper.ReadInConfig()
-	rootCmd.PersistentFlags().StringVar(&token, "api-token", viper.GetString("token"), "API token to use")
-	rootCmd.PersistentFlags().StringVar(&endpoint, "api-endpoint", viper.GetString("endpoint"), "API endpoint to use")
 	rootCmd.SetVersionTemplate("Valar CLI {{.Version}}\n")
 	rootCmd.Version = version
 	// Configure projects.go
@@ -59,6 +141,8 @@ func init() {
 	initEnvCmd()
 	// Configure domains.go
 	initDomainsCmd()
+	// Configure config.go
+	initConfigCmd()
 }
 
 func runAndHandle(f func(*cobra.Command, []string) error) func(*cobra.Command, []string) {

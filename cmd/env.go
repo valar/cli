@@ -56,7 +56,7 @@ var envSetCmd = &cobra.Command{
 		if err := cfg.ReadFromFile(functionConfiguration); err != nil {
 			return err
 		}
-		client, err := api.NewClient(endpoint, token)
+		client, err := globalConfiguration.APIClient()
 		if err != nil {
 			return err
 		}
