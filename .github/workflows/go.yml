@@ -143,21 +143,20 @@ jobs:
         run: |
           echo ::set-output name=version::${GITHUB_REF/refs\/tags\//}
           echo ::set-output name=short_version::$(echo ${GITHUB_REF/refs\/tags\//} | cut -c2-)
-      - name: Zip Folder
-        run: wget https://github.com/valar/cli/archive/${{ steps.get_version.outputs.version }}.zip -O cli.zip
-      - name: "Get SHA256"
-        id: shasum
-        run: echo ::set-output name=sha::"$(shasum -a 256 cli.zip | awk '{printf $1}')"
+      - name: Get sha256
+        run: echo ::set-output name=sha::"$(curl https://github.com/valar/cli/archive/${{ steps.get_version.outputs.version }}.tar.gz | sha -a 256 -)"
       - name: Bump Brew
         env:
           SSH_AUTH_SOCK: /tmp/ssh_agent.sock
         run: |
           brew tap valar/tap git@github.com:valar/homebrew-tap.git
-          brew bump-formula-pr -f --version=${{ steps.get_version.outputs.short_version }} --no-browse --no-audit --write --commit \
-            --sha256=${{ steps.shasum.outputs.sha }} \
-            --url="https://github.com/valar/cli/archive/${{ steps.get_version.outputs.version }}.zip" \
-            valar/tap/valar
           cd $(brew --repo valar/tap)
-          git push
+          git checkout -b release/${{ steps.get_version.outputs.version }}
+          brew bump-formula-pr -f --version=${{ steps.get_version.outputs.short_version }} --no-browse --no-audit \
+            --commit --write-only \
+            --sha256=${{ steps.shasum.outputs.sha }} \
+            --url="https://github.com/valar/cli/archive/${{ steps.get_version.outputs.version }}.tar.gz" \
+            valar/tap/valar
+          git push -u origin release/${{ steps.get_version.outputs.version }}
         
     
