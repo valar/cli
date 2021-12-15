@@ -144,7 +144,7 @@ jobs:
           echo ::set-output name=version::${GITHUB_REF#refs/*/}
           echo ::set-output name=short_version::$(echo ${GITHUB_REF#refs/*/} | cut -c2-)
       - name: Get sha256
-        run:
+        run: |
           echo Attempting to fetch versions (${{ steps.get_version.outputs.version }}) / ${{ steps.get_version.outputs.short_version }}) from GitHub
           echo ::set-output name=sha::"$(curl -sSL https://github.com/valar/cli/archive/${{ steps.get_version.outputs.version }}.tar.gz | shasum -a 256 | awk '{printf $1}')"
       - name: Bump Brew
