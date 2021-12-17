@@ -148,10 +148,9 @@ jobs:
         run: |
           brew tap valar/tap git@github.com:valar/homebrew-tap.git
           cd $(brew --repo valar/tap)
-          git checkout -b release/${{ steps.get_version.outputs.version }}
           brew bump-formula-pr --write-only \
             --url=https://github.com/valar/cli/archive/${{ steps.get_version.outputs.version }}.tar.gz \
             valar/tap/valar
-          git commit -m "Bump version to ${{ steps.get_version.outputs.version }}"
-          git push -u origin release/${{ steps.get_version.outputs.version }}
+          git commit -a -m "Bump version to ${{ steps.get_version.outputs.version }}"
+          git push -u
     
