@@ -4,7 +4,6 @@ on:
     tags:
       - 'v*'
 jobs:
-
   build:
     name: Build
     runs-on: ubuntu-latest
@@ -122,7 +121,7 @@ jobs:
         asset_name: valar_darwin_arm64
         asset_content_type: binary/octet-stream
   homebrew: 
-    name: "Update homebrew formula"
+    name: Update homebrew-tap
     runs-on: macos-latest
     needs: [build, release]
     steps:
@@ -138,27 +137,21 @@ jobs:
           ssh-add - <<< "${DEPLOY_KEY}"
           git config --global user.email "action@github.com"
           git config --global user.name "GitHub Actions"
-      - name: Get version
+      - name: Extract version
         id: get_version
         run: |
           echo ::set-output name=version::${GITHUB_REF#refs/*/}
           echo ::set-output name=short_version::$(echo ${GITHUB_REF#refs/*/} | cut -c2-)
-      - name: Get sha256
-        run: |
-          echo "Attempting to fetch versions (${{ steps.get_version.outputs.version }}) / ${{ steps.get_version.outputs.short_version }}) from GitHub"
-          echo ::set-output name=sha::"$(curl -sSL https://github.com/valar/cli/archive/${{ steps.get_version.outputs.version }}.tar.gz | shasum -a 256 | awk '{printf $1}')"
-      - name: Bump Brew
+      - name: Bump archive version
         env:
           SSH_AUTH_SOCK: /tmp/ssh_agent.sock
         run: |
           brew tap valar/tap git@github.com:valar/homebrew-tap.git
           cd $(brew --repo valar/tap)
           git checkout -b release/${{ steps.get_version.outputs.version }}
-          brew bump-formula-pr -f --version=${{ steps.get_version.outputs.short_version }} --no-browse --no-audit \
-            --commit --write-only \
-            --sha256=${{ steps.shasum.outputs.sha }} \
-            --url="https://github.com/valar/cli/archive/${{ steps.get_version.outputs.version }}.tar.gz" \
+          brew bump-formula-pr --write-only \
+            --url=https://github.com/valar/cli/archive/${{ steps.get_version.outputs.version }}.tar.gz \
             valar/tap/valar
+          git commit -m "Bump version to ${{ steps.get_version.outputs.version }}"
           git push -u origin release/${{ steps.get_version.outputs.version }}
-        
     
