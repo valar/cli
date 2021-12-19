@@ -82,9 +82,13 @@ var configContextCmd = &cobra.Command{
 	Args:  cobra.NoArgs,
 	Run: func(cmd *cobra.Command, args []string) {
 		tw := ansiterm.NewTabWriter(os.Stdout, 6, 0, 1, ' ', 0)
-		fmt.Fprintln(tw, "NAME\tENDPOINT\tPROJECT")
+		fmt.Fprintln(tw, "ACTIVE\tNAME\tENDPOINT\tPROJECT")
 		for name, ctx := range globalConfiguration.Contexts {
-			fmt.Fprintf(tw, "%s\t%s\t%s\n", name, ctx.Endpoint, ctx.Project)
+			active := ""
+			if name == globalConfiguration.ActiveContext {
+				active = "*"
+			}
+			fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", active, name, ctx.Endpoint, ctx.Project)
 		}
 		tw.Flush()
 	},
