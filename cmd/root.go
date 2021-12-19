@@ -73,6 +73,11 @@ We take care while you do what you do best.`,
 		// Extract project, token, endpoint
 		cfg.Path = cfgpaths[len(cfgpaths)-1]
 		globalConfiguration = cfg
+
+		// Warn if either project, token or endpoint is empty
+		if len(globalConfiguration.Token()) == 0 || len(globalConfiguration.Endpoint()) == 0 || len(globalConfiguration.Project()) == 0 {
+			fmt.Fprintln(os.Stderr, "Warning: Active context is invalid. Choose or configure a new context using the `valar config` command.")
+		}
 		return nil
 	},
 }
