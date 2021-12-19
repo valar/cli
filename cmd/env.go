@@ -31,7 +31,7 @@ var envCmd = &cobra.Command{
 			}
 		case "table":
 			tw := tabwriter.NewWriter(os.Stdout, 0, 1, 1, ' ', 0)
-			fmt.Fprintln(tw, "Key\tValue\tSecret")
+			fmt.Fprintln(tw, "KEY\tVALUE\tSECRET")
 			for _, kv := range kvs {
 				fmt.Fprintf(tw, "%s\t%s\t%v\n", kv.Key, kv.Value, kv.Secret)
 			}

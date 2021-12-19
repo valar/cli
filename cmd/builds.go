@@ -120,7 +120,7 @@ func listBuilds(client *api.Client, cfg *config.ServiceConfig, id string) error 
 		return builds[i].CreatedAt.Before(builds[j].CreatedAt)
 	})
 	tw := ansiterm.NewTabWriter(os.Stdout, 6, 0, 1, ' ', 0)
-	fmt.Fprintln(tw, "ID\tStatus\tCreated")
+	fmt.Fprintln(tw, "ID\tSTATUS\tCREATED")
 	for _, b := range builds {
 		fmt.Fprintln(tw, strings.Join([]string{
 			b.ID,

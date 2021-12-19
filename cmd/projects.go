@@ -32,7 +32,7 @@ var (
 				return err
 			}
 			tw := tabwriter.NewWriter(os.Stdout, 0, 0, 1, ' ', 0)
-			fmt.Fprintln(tw, "User\tActions")
+			fmt.Fprintln(tw, "USER\tACTIONS")
 			for user, actions := range pms {
 				fmt.Fprintf(tw, "%s\t%s\n", user, strings.Join(actions, ", "))
 			}

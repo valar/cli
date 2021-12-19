@@ -32,7 +32,7 @@ var configEndpointCmd = &cobra.Command{
 		tw := ansiterm.NewTabWriter(os.Stdout, 6, 0, 1, ' ', 0)
 		fmt.Fprintln(tw, "NAME\tURL\tTOKEN")
 		for name, ep := range globalConfiguration.Endpoints {
-			fmt.Fprintln(tw, name, ep.URL, ep.Token)
+			fmt.Fprintf(tw, "%s\t%s\t%s\n", name, ep.URL, ep.Token)
 		}
 		tw.Flush()
 	},
@@ -84,7 +84,7 @@ var configContextCmd = &cobra.Command{
 		tw := ansiterm.NewTabWriter(os.Stdout, 6, 0, 1, ' ', 0)
 		fmt.Fprintln(tw, "NAME\tENDPOINT\tPROJECT")
 		for name, ctx := range globalConfiguration.Contexts {
-			fmt.Fprintln(tw, name, ctx.Endpoint, ctx.Project)
+			fmt.Fprintf(tw, "%s\t%s\t%s\n", name, ctx.Endpoint, ctx.Project)
 		}
 		tw.Flush()
 	},

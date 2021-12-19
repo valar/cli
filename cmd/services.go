@@ -75,7 +75,7 @@ var listCmd = &cobra.Command{
 			return services[i].DeployedAt.Before(services[j].DeployedAt)
 		})
 		tw := tabwriter.NewWriter(os.Stdout, 0, 0, 1, ' ', 0)
-		fmt.Fprintln(tw, "Name\tDeployment\tCreated\tLast deployed\tDomains")
+		fmt.Fprintln(tw, "NAME\tVERSION\tCREATED\tLAST DEPLOYED\tDOMAINS")
 		for _, svc := range services {
 			fmt.Fprintln(tw, strings.Join([]string{
 				svc.Name,
