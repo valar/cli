@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/facebookgo/symwalk"
 	"github.com/mholt/archiver/v3"
 )
 
@@ -28,7 +29,7 @@ func CompressDir(sourcePath string, ignores []string) (string, error) {
 	tgz := archiver.NewTarGz()
 	tgz.Create(tmpfile)
 	defer tgz.Close()
-	err = filepath.Walk(sourcePath, func(path string, info os.FileInfo, err error) error {
+	err = symwalk.Walk(sourcePath, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
 		}
