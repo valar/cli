@@ -14,15 +14,19 @@ var domainsCmd = &cobra.Command{
 	Short: "Manage custom domains",
 	Args:  cobra.ExactArgs(0),
 	Run: runAndHandle(func(cmd *cobra.Command, args []string) error {
+		var project string
+		// Attempt to read project from file if possible
 		cfg := &config.ServiceConfig{}
 		if err := cfg.ReadFromFile(functionConfiguration); err != nil {
-			return err
+			project = globalConfiguration.Project()
+		} else {
+			project = cfg.Project
 		}
 		client, err := globalConfiguration.APIClient()
 		if err != nil {
 			return err
 		}
-		doms, err := client.ListDomains(cfg.Project)
+		doms, err := client.ListDomains(project)
 		if err != nil {
 			return err
 		}
@@ -45,15 +49,20 @@ var domainsAddCmd = &cobra.Command{
 	Short: "Add a new domain to the project",
 	Args:  cobra.ExactArgs(1),
 	Run: runAndHandle(func(cmd *cobra.Command, args []string) error {
+		var project string
+		// Attempt to read project from file if possible
 		cfg := &config.ServiceConfig{}
 		if err := cfg.ReadFromFile(functionConfiguration); err != nil {
-			return err
+			// Fall back to global project
+			project = globalConfiguration.Project()
+		} else {
+			project = cfg.Project
 		}
 		client, err := globalConfiguration.APIClient()
 		if err != nil {
 			return err
 		}
-		records, err := client.AddDomain(cfg.Project, args[0])
+		records, err := client.AddDomain(project, args[0])
 		if err != nil {
 			return err
 		}
@@ -73,15 +82,20 @@ var domainsVerifyCmd = &cobra.Command{
 	Short: "Verify a newly added domain",
 	Args:  cobra.ExactArgs(1),
 	Run: runAndHandle(func(cmd *cobra.Command, args []string) error {
+		var project string
+		// Attempt to read project from file if possible
 		cfg := &config.ServiceConfig{}
 		if err := cfg.ReadFromFile(functionConfiguration); err != nil {
-			return err
+			// Fall back to global project
+			project = globalConfiguration.Project()
+		} else {
+			project = cfg.Project
 		}
 		client, err := globalConfiguration.APIClient()
 		if err != nil {
 			return err
 		}
-		dom, err := client.VerifyDomain(cfg.Project, args[0])
+		dom, err := client.VerifyDomain(project, args[0])
 		if err != nil {
 			return err
 		}
@@ -95,19 +109,28 @@ var domainsLinkCmd = &cobra.Command{
 	Short: "Link a domain to a service",
 	Args:  cobra.RangeArgs(1, 2),
 	Run: runAndHandle(func(cmd *cobra.Command, args []string) error {
+		var project, svc string
+		// Attempt to read project from file if possible
 		cfg := &config.ServiceConfig{}
 		if err := cfg.ReadFromFile(functionConfiguration); err != nil {
-			return err
+			project = globalConfiguration.Project()
+		} else {
+			project = cfg.Project
+			svc = cfg.Service
+		}
+		// If arg exists, replace service
+		if len(args) == 2 {
+			svc = args[1]
+		}
+		// If svc is still missing, fail
+		if svc == "" {
+			return fmt.Errorf("missing service name")
 		}
 		client, err := globalConfiguration.APIClient()
 		if err != nil {
 			return err
 		}
-		svc := cfg.Service
-		if len(args) == 2 {
-			svc = args[1]
-		}
-		return client.LinkDomain(cfg.Project, args[0], svc)
+		return client.LinkDomain(project, args[0], svc)
 	}),
 }
 
