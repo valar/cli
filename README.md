@@ -24,7 +24,7 @@ valar config context use default
 
 ### Configuration
 
-> By default, Valar uses the default valarconfig file in `$HOME/.valar/config`. If the `VALARCONFIG` environment variable does exist, `valar` uses the an effective configuration that is the result of merging the files listed in the `VALARCONFIG` variable.
+> By default, Valar uses the default valarconfig file in `$HOME/.valar/config`. If the `VALARCONFIG` environment variable does exist, `valar` uses an effective configuration that is the result of merging the files listed in the `VALARCONFIG` variable.
 
 #### Dump the current configuration as YAML
 ```
