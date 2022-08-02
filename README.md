@@ -9,11 +9,6 @@ This repository contains the command line interface for Valar.
 brew install valar/tap/valar
 ```
 
-### Install via cURL
-```
-curl -sSL https://cli.valar.dev | bash -
-```
-
 ## Configuration
 
 ```bash
