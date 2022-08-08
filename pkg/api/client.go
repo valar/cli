@@ -337,6 +337,19 @@ func (client *Client) LinkDomain(project, domain, service string) error {
 	return nil
 }
 
+func (client *Client) UnlinkDomain(project, domain, service string) error {
+	var (
+		path       = fmt.Sprintf("/projects/%s/domains/%s/link", project, domain)
+		payload, _ = json.Marshal(struct {
+			Service string `json:"service"`
+		}{service})
+	)
+	if err := client.request(http.MethodDelete, path, nil, bytes.NewReader(payload)); err != nil {
+		return err
+	}
+	return nil
+}
+
 func (client *Client) VerifyDomain(project, domain string) (*Domain, error) {
 	var (
 		path = fmt.Sprintf("/projects/%s/domains/%s/verify", project, domain)

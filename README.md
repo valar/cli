@@ -159,9 +159,9 @@ valar domains verify [domain]
 valar domains link [domain] ([service])
 ```
 
-#### Unlink a domain from a service [not implemented]
+#### Unlink a domain from a service
 ```bash
-valar domains unlink [domain]
+valar domains unlink [domain] ([service])
 ```
 
 #### Remove a domain and all domain links [not implemented]

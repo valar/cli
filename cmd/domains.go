@@ -134,9 +134,40 @@ var domainsLinkCmd = &cobra.Command{
 	}),
 }
 
+var domainsUnlinkCmd = &cobra.Command{
+	Use:   "unlink [domain] ([service])",
+	Short: "Unlink a domain from a service",
+	Args:  cobra.RangeArgs(1, 2),
+	Run: runAndHandle(func(cmd *cobra.Command, args []string) error {
+		var project, svc string
+		// Attempt to read project from file if possible
+		cfg := &config.ServiceConfig{}
+		if err := cfg.ReadFromFile(functionConfiguration); err != nil {
+			project = globalConfiguration.Project()
+		} else {
+			project = cfg.Project
+			svc = cfg.Service
+		}
+		// If arg exists, replace service
+		if len(args) == 2 {
+			svc = args[1]
+		}
+		// If svc is still missing, fail
+		if svc == "" {
+			return fmt.Errorf("missing service name")
+		}
+		client, err := globalConfiguration.APIClient()
+		if err != nil {
+			return err
+		}
+		return client.UnlinkDomain(project, args[0], svc)
+	}),
+}
+
 func initDomainsCmd() {
 	domainsCmd.AddCommand(domainsAddCmd)
 	domainsCmd.AddCommand(domainsVerifyCmd)
 	domainsCmd.AddCommand(domainsLinkCmd)
+	domainsCmd.AddCommand(domainsUnlinkCmd)
 	rootCmd.AddCommand(domainsCmd)
 }
