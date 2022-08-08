@@ -3,10 +3,12 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"valar/cli/pkg/api"
 	"valar/cli/pkg/config"
 
 	"github.com/juju/ansiterm"
 	"github.com/spf13/cobra"
+	"golang.org/x/exp/slices"
 )
 
 var domainsCmd = &cobra.Command{
@@ -30,6 +32,9 @@ var domainsCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
+		// Sort domains before printing them out
+		slices.SortFunc(doms, func(a, b api.Domain) bool { return a.Domain < b.Domain })
+		// Print them pretty
 		tw := ansiterm.NewTabWriter(os.Stdout, 6, 0, 1, ' ', 0)
 		fmt.Fprintln(tw, "DOMAIN\tVERIFIED\tSERVICE\tERROR")
 		for _, d := range doms {
