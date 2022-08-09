@@ -324,7 +324,7 @@ func (client *Client) AddDomain(project, domain string) (map[string]string, erro
 	return records, nil
 }
 
-func (client *Client) RemoveDomain(project, domain string) error {
+func (client *Client) DeleteDomain(project, domain string) error {
 	var (
 		path = fmt.Sprintf("/projects/%s/domains/%s", project, domain)
 	)

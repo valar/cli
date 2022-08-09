@@ -82,9 +82,9 @@ var domainsAddCmd = &cobra.Command{
 	}),
 }
 
-var domainsRemoveCmd = &cobra.Command{
-	Use:   "remove [domain]",
-	Short: "Removes an existing domain from the project",
+var domainsDeleteCmd = &cobra.Command{
+	Use:   "delete [domain]",
+	Short: "Deletes an existing domain from the project",
 	Args:  cobra.ExactArgs(1),
 	Run: runAndHandle(func(cmd *cobra.Command, args []string) error {
 		var project string
@@ -100,7 +100,7 @@ var domainsRemoveCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		if err := client.RemoveDomain(project, args[0]); err != nil {
+		if err := client.DeleteDomain(project, args[0]); err != nil {
 			return err
 		}
 		return nil
@@ -199,6 +199,6 @@ func initDomainsCmd() {
 	domainsCmd.AddCommand(domainsVerifyCmd)
 	domainsCmd.AddCommand(domainsLinkCmd)
 	domainsCmd.AddCommand(domainsUnlinkCmd)
-	domainsCmd.AddCommand(domainsRemoveCmd)
+	domainsCmd.AddCommand(domainsDeleteCmd)
 	rootCmd.AddCommand(domainsCmd)
 }
