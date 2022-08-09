@@ -164,7 +164,7 @@ valar domains link [domain] ([service])
 valar domains unlink [domain] ([service])
 ```
 
-#### Remove a domain and all domain links [not implemented]
+#### Remove a domain
 ```bash
 valar domains delete [domain]
 ```

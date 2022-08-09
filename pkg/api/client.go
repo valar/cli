@@ -324,6 +324,16 @@ func (client *Client) AddDomain(project, domain string) (map[string]string, erro
 	return records, nil
 }
 
+func (client *Client) RemoveDomain(project, domain string) error {
+	var (
+		path = fmt.Sprintf("/projects/%s/domains/%s", project, domain)
+	)
+	if err := client.request(http.MethodDelete, path, nil, nil); err != nil {
+		return err
+	}
+	return nil
+}
+
 func (client *Client) LinkDomain(project, domain, service string) error {
 	var (
 		path       = fmt.Sprintf("/projects/%s/domains/%s/link", project, domain)

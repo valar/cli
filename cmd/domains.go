@@ -82,6 +82,31 @@ var domainsAddCmd = &cobra.Command{
 	}),
 }
 
+var domainsRemoveCmd = &cobra.Command{
+	Use:   "remove [domain]",
+	Short: "Removes an existing domain from the project",
+	Args:  cobra.ExactArgs(1),
+	Run: runAndHandle(func(cmd *cobra.Command, args []string) error {
+		var project string
+		// Attempt to read project from file if possible
+		cfg := &config.ServiceConfig{}
+		if err := cfg.ReadFromFile(functionConfiguration); err != nil {
+			// Fall back to global project
+			project = globalConfiguration.Project()
+		} else {
+			project = cfg.Project
+		}
+		client, err := globalConfiguration.APIClient()
+		if err != nil {
+			return err
+		}
+		if err := client.RemoveDomain(project, args[0]); err != nil {
+			return err
+		}
+		return nil
+	}),
+}
+
 var domainsVerifyCmd = &cobra.Command{
 	Use:   "verify [domain]",
 	Short: "Verify a newly added domain",
@@ -174,5 +199,6 @@ func initDomainsCmd() {
 	domainsCmd.AddCommand(domainsVerifyCmd)
 	domainsCmd.AddCommand(domainsLinkCmd)
 	domainsCmd.AddCommand(domainsUnlinkCmd)
+	domainsCmd.AddCommand(domainsRemoveCmd)
 	rootCmd.AddCommand(domainsCmd)
 }
