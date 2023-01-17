@@ -91,14 +91,17 @@ valar init --type=[constructor] [--project=[project-name]] [service]
 ```bash
 valar push [--skip-deploy]
 ```
+
 #### Listing all services in the project
 ```bash
 valar list
 ```
+
 #### Show the logs of the latest deployment
 ```
 valar logs [service]
 ```
+
 #### Listing all deployments of a service 
 ```bash
 valar deploys
@@ -114,9 +117,14 @@ valar deploys create [buildid]
 valar deploys rollback [--delta 1]
 ```
 
-#### Delete a service [not implemented]
+#### Enable a service [not implemented]
 ```bash
-valar delete [service]
+valar enable [service]
+```
+
+#### Disable a service [not implemented]
+```bash
+valar disable [service]
 ```
 
 ### Environment variables
@@ -202,7 +210,7 @@ valar auth allow --user [user] --action [read|write|invoke|manage]
 ```
 #### Forbid someone to read/write/invoke/manage
 ```bash
-valar auth forbid --user [user] --action
+valar auth forbid --user [user] --action [read|write|invoke|manage]
 ```
 #### Reset permissions to project default [not implemented]
 ```bash
