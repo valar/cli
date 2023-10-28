@@ -134,8 +134,10 @@ var domainsVerifyCmd = &cobra.Command{
 	}),
 }
 
+var domainsLinkAllowInsecureTraffic bool
+
 var domainsLinkCmd = &cobra.Command{
-	Use:   "link [domain] ([service])",
+	Use:   "link [--insecure] [domain] ([service])",
 	Short: "Link a domain to a service",
 	Args:  cobra.RangeArgs(1, 2),
 	Run: runAndHandle(func(cmd *cobra.Command, args []string) error {
@@ -160,7 +162,7 @@ var domainsLinkCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		return client.LinkDomain(project, args[0], svc)
+		return client.LinkDomain(project, args[0], svc, domainsLinkAllowInsecureTraffic)
 	}),
 }
 
@@ -195,6 +197,7 @@ var domainsUnlinkCmd = &cobra.Command{
 }
 
 func initDomainsCmd() {
+	domainsLinkCmd.Flags().BoolVarP(&domainsLinkAllowInsecureTraffic, "insecure", "i", false, "Allow insecure traffic to the service. Disables the default HTTPS redirect for this domain.")
 	domainsCmd.AddCommand(domainsAddCmd)
 	domainsCmd.AddCommand(domainsVerifyCmd)
 	domainsCmd.AddCommand(domainsLinkCmd)

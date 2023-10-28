@@ -164,8 +164,10 @@ valar domains verify [domain]
 
 #### Link a domain to a service
 ```bash
-valar domains link [domain] ([service])
+valar domains link [--insecure] [domain] ([service])
 ```
+
+> If `--insecure` is enabled, the default HTTP-to-HTTPS redirection handler will be disabled and any plaintext HTTP requests will be forwarded to your service.
 
 #### Unlink a domain from a service
 ```bash

@@ -334,12 +334,16 @@ func (client *Client) DeleteDomain(project, domain string) error {
 	return nil
 }
 
-func (client *Client) LinkDomain(project, domain, service string) error {
+func (client *Client) LinkDomain(project, domain, service string, allowInsecureTraffic bool) error {
 	var (
 		path       = fmt.Sprintf("/projects/%s/domains/%s/link", project, domain)
 		payload, _ = json.Marshal(struct {
-			Service string `json:"service"`
-		}{service})
+			Service              string `json:"service"`
+			AllowInsecureTraffic bool   `json:"allowInsecureTraffic"`
+		}{
+			Service:              service,
+			AllowInsecureTraffic: allowInsecureTraffic,
+		})
 	)
 	if err := client.request(http.MethodPost, path, nil, bytes.NewReader(payload)); err != nil {
 		return err
