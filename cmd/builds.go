@@ -110,6 +110,24 @@ var inspectCmd = &cobra.Command{
 	}),
 }
 
+var statusCmd = &cobra.Command{
+	Use:   "status [buildid]",
+	Short: "Show the status of the given build",
+	Args:  cobra.ExactArgs(1),
+	Run: runAndHandle(func(cmd *cobra.Command, args []string) error {
+		cfg := &config.ServiceConfig{}
+		if err := cfg.ReadFromFile(functionConfiguration); err != nil {
+			return err
+		}
+		client, err := globalConfiguration.APIClient()
+		if err != nil {
+			return err
+		}
+		showBuildStatusAndExit(client, cfg, args[0])
+		return nil
+	}),
+}
+
 func listBuilds(client *api.Client, cfg *config.ServiceConfig, id string) error {
 	builds, err := client.ListBuilds(cfg.Project, cfg.Service, id)
 	if err != nil {
@@ -129,6 +147,16 @@ func listBuilds(client *api.Client, cfg *config.ServiceConfig, id string) error 
 		}, "\t"))
 	}
 	tw.Flush()
+	return nil
+}
+
+func showBuildStatusAndExit(client *api.Client, cfg *config.ServiceConfig, id string) error {
+	build, err := client.InspectBuild(cfg.Project, cfg.Service, id)
+	if err != nil {
+		return err
+	}
+	fmt.Fprintln(os.Stdout, colorize(build.Status))
+	os.Exit(statusToExitCode(build.Status))
 	return nil
 }
 
@@ -165,6 +193,15 @@ func deployBuild(client *api.Client, cfg *config.ServiceConfig, id string) error
 	return nil
 }
 
+func statusToExitCode(status string) int {
+	switch status {
+	case "done":
+		return 0
+	default:
+		return 1
+	}
+}
+
 func colorize(status string) string {
 	switch status {
 	case "scheduled", "waiting":
@@ -185,5 +222,6 @@ func initBuildsCmd() {
 	buildCmd.AddCommand(inspectCmd)
 	buildCmd.AddCommand(buildLogsCmd)
 	buildCmd.AddCommand(buildAbortCmd)
+	buildCmd.AddCommand(statusCmd)
 	rootCmd.AddCommand(buildCmd)
 }

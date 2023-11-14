@@ -98,8 +98,8 @@ valar list
 ```
 
 #### Show the logs of the latest deployment
-```
-valar logs [service]
+```bash
+valar logs [--follow] [--tail] [--skip n] [service]
 ```
 
 #### Listing all deployments of a service 
@@ -200,6 +200,10 @@ valar builds abort [prefix]
 #### Show logs from build 
 ```bash
 valar builds logs [--follow] [optional buildid]
+```
+#### Show build status
+```bash
+valar builds status [--exit] [buildid]
 ```
 ### Permissions
 #### View permissions 
