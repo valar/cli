@@ -7,6 +7,8 @@ import (
 	"io"
 	"io/ioutil"
 	"net/http"
+	"net/url"
+	"strconv"
 	"time"
 )
 
@@ -116,21 +118,20 @@ func (client *Client) ListServices(project, service string) ([]Service, error) {
 	return services, nil
 }
 
-// ShowServiceLogs fetches the up-to-date logs of the latest service endpoint.
-func (client *Client) ShowServiceLogs(project, service string, w io.Writer) error {
-	var (
-		path = fmt.Sprintf("/projects/%s/services/%s/logs", project, service)
-	)
-	if err := client.streamRequest(http.MethodGet, path, w); err != nil {
-		return err
-	}
-	return nil
-}
-
 // StreamServiceLogs streams the logs of the latest service endpoint.
-func (client *Client) StreamServiceLogs(project, service string, w io.Writer) error {
+func (client *Client) StreamServiceLogs(project, service string, w io.Writer, follow, tail bool, skip int) error {
+	params := url.Values{}
+	if follow {
+		params.Set("follow", "true")
+	}
+	if tail {
+		params.Set("seek", "end")
+	} else {
+		params.Set("seek", "start")
+	}
+	params.Set("skip", strconv.Itoa(skip))
 	var (
-		path = fmt.Sprintf("/projects/%s/services/%s/logs?follow=true", project, service)
+		path = fmt.Sprintf("/projects/%s/services/%s/logs?%s", project, service, params.Encode())
 	)
 	if err := client.streamRequest(http.MethodGet, path, w); err != nil {
 		return err

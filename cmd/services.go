@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"sort"
@@ -90,26 +91,31 @@ var listCmd = &cobra.Command{
 	}),
 }
 
+var (
+	serviceLogsFollow bool
+	serviceLogsTail   bool
+	serviceLogsLines  int
+)
+
 var serviceLogsCmd = &cobra.Command{
 	Use:   "logs [service]",
 	Short: "Show the logs of the latest deployment",
 	Args:  cobra.MaximumNArgs(1),
 	Run: runAndHandle(func(cmd *cobra.Command, args []string) error {
-		cfg := &config.ServiceConfig{}
-		if err := cfg.ReadFromFile(functionConfiguration); err != nil {
-			return err
-		}
 		client, err := globalConfiguration.APIClient()
 		if err != nil {
+			return err
+		}
+		cfg := &config.ServiceConfig{}
+		if err := cfg.ReadFromFile(functionConfiguration); errors.Is(err, os.ErrNotExist) {
+			cfg.Project = globalConfiguration.Project()
+		} else {
 			return err
 		}
 		if len(args) == 1 {
 			cfg.Service = args[0]
 		}
-		if logsFollow {
-			return client.StreamServiceLogs(cfg.Project, cfg.Service, os.Stdout)
-		}
-		return client.ShowServiceLogs(cfg.Project, cfg.Service, os.Stdout)
+		return client.StreamServiceLogs(cfg.Project, cfg.Service, os.Stdout, serviceLogsFollow, serviceLogsTail, serviceLogsLines)
 	}),
 }
 
@@ -177,7 +183,9 @@ func initServicesCmd() {
 	initPf.StringVarP(&initProject, "project", "p", "", "project to deploy service to, defaults to project set in global config")
 	initPf.BoolVarP(&initForce, "force", "f", false, "allow configuration override")
 	cobra.MarkFlagRequired(initPf, "type")
-	serviceLogsCmd.PersistentFlags().BoolVarP(&logsFollow, "follow", "f", false, "follow logs")
+	serviceLogsCmd.PersistentFlags().BoolVarP(&serviceLogsFollow, "follow", "f", false, "follow logs")
+	serviceLogsCmd.PersistentFlags().BoolVarP(&serviceLogsTail, "tail", "t", false, "jump to end of logs")
+	serviceLogsCmd.PersistentFlags().IntVarP(&serviceLogsLines, "skip", "n", 0, "lines to skip/rewind when reading logs")
 	rootCmd.AddCommand(listCmd)
 	rootCmd.AddCommand(serviceLogsCmd)
 	rootCmd.AddCommand(initCmd)

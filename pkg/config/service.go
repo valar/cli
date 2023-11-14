@@ -1,7 +1,6 @@
 package config
 
 import (
-	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -77,7 +76,7 @@ type ServiceConfig struct {
 func (config *ServiceConfig) ReadFromFile(path string) error {
 	fd, err := os.Open(path)
 	if err != nil {
-		return errors.New("missing configuration, please run init first")
+		return fmt.Errorf("config load: %w", err)
 	}
 	defer fd.Close()
 	decoder := yaml.NewDecoder(fd)
