@@ -1,97 +1,160 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"strings"
 	"text/tabwriter"
+	"valar/cli/pkg/api"
 	"valar/cli/pkg/config"
 
 	"github.com/spf13/cobra"
 )
 
 var (
-	authCmd = &cobra.Command{
-		Use:   "auth",
-		Short: "Manage project permissions",
+	authListCmd = &cobra.Command{
+		Use:   "list [path]",
+		Short: "List permissions for a path prefix",
+		Args:  cobra.MaximumNArgs(1),
 		Run: runAndHandle(func(cmd *cobra.Command, args []string) error {
 			client, err := globalConfiguration.APIClient()
 			if err != nil {
 				return err
 			}
-			var project string
 			cfg := &config.ServiceConfig{}
-			if err := cfg.ReadFromFile(functionConfiguration); err != nil {
-				// Use default project
-				project = globalConfiguration.Project()
-			} else {
-				project = cfg.Project
+			if err := cfg.ReadFromFile(functionConfiguration); errors.Is(err, os.ErrNotExist) {
+				cfg.Project = globalConfiguration.Project()
+			} else if err != nil {
+				return err
 			}
-			pms, err := client.ListPermissions(project)
+			namespace, prefix := "service", cfg.Project
+			if len(args) == 1 {
+				subargs := strings.SplitN(args[0], ":", 2)
+				if len(subargs) != 2 {
+					return fmt.Errorf("expect path to be in the form namespace:prefix")
+				}
+				namespace, prefix = subargs[0], subargs[1]
+			}
+			permissions, err := client.ListPermissions(cfg.Project, namespace, prefix)
 			if err != nil {
 				return err
 			}
 			tw := tabwriter.NewWriter(os.Stdout, 0, 0, 1, ' ', 0)
-			fmt.Fprintln(tw, "USER\tACTIONS")
-			for user, actions := range pms {
-				fmt.Fprintf(tw, "%s\t%s\n", user, strings.Join(actions, ", "))
+			fmt.Fprintln(tw, "PATH\tUSER\tACTION\tSTATE")
+			for _, pm := range permissions {
+				fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", pm.Path, pm.User, pm.Action, pm.State)
 			}
 			tw.Flush()
 			return nil
 		}),
 	}
-	authUser, authAction string
-	authAllowCmd         = &cobra.Command{
-		Use:   "allow",
-		Short: "Allow a user to perform a specific action",
-		Args:  cobra.ExactArgs(0),
+
+	authAllowCmd = &cobra.Command{
+		Use:   "allow path user action",
+		Short: "Modify permissions for a path and user",
+		Args:  cobra.ExactArgs(3),
+		Run:   runAndHandle(authModifyWithState("allow")),
+	}
+	authForbidCmd = &cobra.Command{
+		Use:   "forbid path user action",
+		Short: "Forbid a specific action for a path and user",
+		Args:  cobra.ExactArgs(3),
+		Run:   runAndHandle(authModifyWithState("forbid")),
+	}
+	authClearCmd = &cobra.Command{
+		Use:   "clear path user action",
+		Short: "Remove the permission for a path and user",
+		Args:  cobra.ExactArgs(3),
+		Run:   runAndHandle(authModifyWithState("unset")),
+	}
+	authCheckCmd = &cobra.Command{
+		Use:   "check path user action",
+		Short: "Check if a user can perform an action",
+		Args:  cobra.ExactArgs(3),
 		Run: runAndHandle(func(cmd *cobra.Command, args []string) error {
 			client, err := globalConfiguration.APIClient()
 			if err != nil {
 				return err
 			}
-			var project string
 			cfg := &config.ServiceConfig{}
-			if err := cfg.ReadFromFile(functionConfiguration); err != nil {
-				project = globalConfiguration.Project()
-			} else {
-				project = cfg.Project
-			}
-			if err := client.ModifyPermission(project, authUser, authAction, false); err != nil {
+			if err := cfg.ReadFromFile(functionConfiguration); errors.Is(err, os.ErrNotExist) {
+				cfg.Project = globalConfiguration.Project()
+			} else if err != nil {
 				return err
+			}
+			path, err := api.PermissionPathFromString(args[0])
+			if err != nil {
+				return err
+			}
+			user, err := api.PermissionUserFromString(args[1])
+			if err != nil {
+				return err
+			}
+			permission := api.Permission{
+				Path:   path,
+				User:   user,
+				Action: args[2],
+			}
+			allowed, err := client.CheckPermission(cfg.Project, permission)
+			if err != nil {
+				return err
+			}
+			if allowed {
+				fmt.Println("allowed")
+			} else {
+				fmt.Println("forbidden")
 			}
 			return nil
 		}),
 	}
-	authForbidCmd = &cobra.Command{
-		Use:   "forbid",
-		Short: "Forbid a user to perform a specific action",
-		Args:  cobra.ExactArgs(0),
-		Run: runAndHandle(func(cmd *cobra.Command, args []string) error {
-			client, err := globalConfiguration.APIClient()
-			if err != nil {
-				return err
-			}
-			var project string
-			cfg := &config.ServiceConfig{}
-			if err := cfg.ReadFromFile(functionConfiguration); err != nil {
-				project = globalConfiguration.Project()
-			} else {
-				project = cfg.Project
-			}
-			if err := client.ModifyPermission(project, authUser, authAction, true); err != nil {
-				return err
-			}
-			return nil
-		}),
+
+	authCmd = &cobra.Command{
+		Use:   "auth",
+		Short: "Manage user and service permissions",
 	}
 )
 
+func authModifyWithState(state string) func(cmd *cobra.Command, args []string) error {
+	return func(cmd *cobra.Command, args []string) error {
+		client, err := globalConfiguration.APIClient()
+		if err != nil {
+			return err
+		}
+		cfg := &config.ServiceConfig{}
+		if err := cfg.ReadFromFile(functionConfiguration); errors.Is(err, os.ErrNotExist) {
+			cfg.Project = globalConfiguration.Project()
+		} else if err != nil {
+			return err
+		}
+		path, err := api.PermissionPathFromString(args[0])
+		if err != nil {
+			return err
+		}
+		user, err := api.PermissionUserFromString(args[1])
+		if err != nil {
+			return err
+		}
+		permission := api.Permission{
+			Path:   path,
+			User:   user,
+			Action: args[2],
+			State:  state,
+		}
+		modified, err := client.ModifyPermission(cfg.Project, permission)
+		if err != nil {
+			return err
+		}
+		if modified {
+			fmt.Println("modified")
+		} else {
+			fmt.Println("unchanged")
+		}
+		return nil
+	}
+}
+
 func initProjectsCmd() {
-	authCmd.AddCommand(authAllowCmd, authForbidCmd)
-	authForbidCmd.Flags().StringVarP(&authAction, "action", "a", "invoke", "Action to be modified")
-	authForbidCmd.Flags().StringVarP(&authUser, "user", "u", "anonymous", "User to be modified")
-	authAllowCmd.Flags().StringVarP(&authAction, "action", "a", "invoke", "Action to be modified")
-	authAllowCmd.Flags().StringVarP(&authUser, "user", "u", "anonymous", "User to be modified")
+	authCmd.AddCommand(authListCmd, authAllowCmd, authForbidCmd, authClearCmd, authCheckCmd)
 	rootCmd.AddCommand(authCmd)
 }

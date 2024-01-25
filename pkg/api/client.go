@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -225,10 +226,13 @@ func (client *Client) ListBuilds(project, service, id string) ([]Build, error) {
 }
 
 // ListPermissions retrieves all permissions set for a specific project.
-func (client *Client) ListPermissions(project string) (PermissionSet, error) {
+func (client *Client) ListPermissions(project, namespace, prefix string) ([]Permission, error) {
+	params := url.Values{}
+	params.Add("namespace", namespace)
+	params.Add("prefix", prefix)
 	var (
-		set  = make(PermissionSet)
-		path = fmt.Sprintf("/projects/%s/auth", project)
+		set  = []Permission{}
+		path = fmt.Sprintf("/projects/%s/permissions?%s", project, params.Encode())
 	)
 	if err := client.request(http.MethodGet, path, &set, nil); err != nil {
 		return nil, err
@@ -237,19 +241,35 @@ func (client *Client) ListPermissions(project string) (PermissionSet, error) {
 }
 
 // ModifyPermission modifies the permission set of a project.
-func (client *Client) ModifyPermission(project, user, action string, forbid bool) error {
+func (client *Client) ModifyPermission(project string, permission Permission) (bool, error) {
 	var (
-		resp   struct{}
-		path   = fmt.Sprintf("/projects/%s/auth/%s/%s", project, user, action)
+		resp struct {
+			Modified bool `json:"modified"`
+		}
+		path   = fmt.Sprintf("/projects/%s/permissions", project)
 		method = http.MethodPost
 	)
-	if forbid {
-		method = http.MethodDelete
+	body, _ := json.Marshal(&permission)
+	if err := client.request(method, path, &resp, bytes.NewReader(body)); err != nil {
+		return false, err
 	}
-	if err := client.request(method, path, &resp, nil); err != nil {
-		return err
+	return resp.Modified, nil
+}
+
+// CheckPermission checks if a user has a specific permission.
+func (client *Client) CheckPermission(project string, permission Permission) (bool, error) {
+	var (
+		resp struct {
+			Allowed bool `json:"allowed"`
+		}
+		path   = fmt.Sprintf("/projects/%s/permissions?mode=check", project)
+		method = http.MethodPost
+	)
+	body, _ := json.Marshal(&permission)
+	if err := client.request(method, path, &resp, bytes.NewReader(body)); err != nil {
+		return false, err
 	}
-	return nil
+	return resp.Allowed, nil
 }
 
 // ListDeployments shows all deployments of a specific service.
@@ -419,7 +439,52 @@ type KVPair struct {
 	Secret bool   `json:"secret"`
 }
 
-type PermissionSet map[string][]string
+type PermissionPath struct {
+	Namespace string   `json:"namespace"`
+	Items     []string `json:"items"`
+}
+
+func (pp PermissionPath) String() string {
+	return fmt.Sprintf("%s:%s", pp.Namespace, strings.Join(pp.Items, "/"))
+}
+
+func PermissionPathFromString(str string) (PermissionPath, error) {
+	path := PermissionPath{}
+	parts := strings.SplitN(str, ":", 2)
+	if len(parts) != 2 {
+		return path, fmt.Errorf("invalid path: %s", str)
+	}
+	path.Namespace = parts[0]
+	path.Items = strings.Split(parts[1], "/")
+	return path, nil
+}
+
+type PermissionUser struct {
+	Type       string   `json:"type"`
+	Identifier []string `json:"identifier"`
+}
+
+func (pp PermissionUser) String() string {
+	return fmt.Sprintf("%s:%s", pp.Type, strings.Join(pp.Identifier, "/"))
+}
+
+func PermissionUserFromString(str string) (PermissionUser, error) {
+	user := PermissionUser{}
+	parts := strings.SplitN(str, ":", 2)
+	if len(parts) != 2 {
+		return user, fmt.Errorf("invalid user: %s", str)
+	}
+	user.Type = parts[0]
+	user.Identifier = strings.Split(parts[1], "/")
+	return user, nil
+}
+
+type Permission struct {
+	Path   PermissionPath `json:"path"`
+	User   PermissionUser `json:"user"`
+	Action string         `json:"action"`
+	State  string         `json:"state"`
+}
 
 type UserInfo struct {
 	Name     string   `json:"name"`
