@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -48,10 +47,10 @@ func (client *Client) check() error {
 	return nil
 }
 
-func (client *Client) error(clientErr error, body []byte) error {
+func parseErrorResponse(body []byte) error {
 	serverErr := Error{}
 	if err := json.Unmarshal(body, &serverErr); err != nil {
-		return fmt.Errorf("client: %w: %v", clientErr, string(body))
+		return fmt.Errorf("unmarshalling error response: %w", err)
 	}
 	return fmt.Errorf("server: %w", serverErr)
 }
@@ -63,11 +62,19 @@ func (client *Client) streamRequest(method, path string, w io.Writer) error {
 		return fmt.Errorf("client request: %w", err)
 	}
 	req.Header.Add("Authorization", "Bearer "+client.Token)
+
 	resp, err := client.http.Do(req)
 	if err != nil {
 		return fmt.Errorf("submitting request: %w", err)
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		body, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return fmt.Errorf("fetching response: %w", err)
+		}
+		return parseErrorResponse(body)
+	}
 	if _, err := io.Copy(w, resp.Body); err != nil && err != io.EOF {
 		return fmt.Errorf("copying request: %w", err)
 	}
@@ -86,17 +93,12 @@ func (client *Client) request(method, path string, obj interface{}, post io.Read
 		return fmt.Errorf("submitting request: %w", err)
 	}
 	defer resp.Body.Close()
-	body, err := ioutil.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return fmt.Errorf("fetching request: %w", err)
 	}
-	switch resp.StatusCode {
-	case http.StatusOK:
-		// Do nothing, we're fine here
-	case http.StatusNotFound:
-		return fmt.Errorf("not found")
-	default:
-		return client.error(fmt.Errorf("bad response"), body)
+	if resp.StatusCode != http.StatusOK {
+		return parseErrorResponse(body)
 	}
 	if obj != nil {
 		if err := json.Unmarshal(body, obj); err != nil {
