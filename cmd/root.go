@@ -15,8 +15,8 @@ var version string
 
 var rootCmd = &cobra.Command{
 	Use:   "valar",
-	Short: "Valar is a next-generation serverless provider",
-	Long: `Valar is a next-generation serverless provider.
+	Short: "Valar is a next-generation serverless platform",
+	Long: `Valar is a next-generation serverless platform.
 
 You code. We do the rest.
 We take care while you do what you do best.`,
@@ -34,14 +34,6 @@ We take care while you do what you do best.`,
 			}
 			// Make sure config exists
 			cfgpath = filepath.Join(dirpath, "config")
-			// Make sure ~/.valar/config exists, best effort
-			if _, err := os.Stat(cfgpath); err != nil {
-				f, err := os.Create(cfgpath)
-				if err != nil {
-					return fmt.Errorf("create empty config: %w", err)
-				}
-				f.Close()
-			}
 		}
 		// Load files from cfgpath and merge them
 		cfgpaths := strings.Split(cfgpath, ";")
@@ -52,7 +44,8 @@ We take care while you do what you do best.`,
 		for _, path := range cfgpaths {
 			data, err := os.ReadFile(path)
 			if err != nil {
-				return fmt.Errorf("read config: %w", err)
+				fmt.Fprintf(os.Stderr, "Warning: Could not read config file %s: %s\n", path, err)
+				continue
 			}
 			// Decode config
 			var subcfg valarConfig
