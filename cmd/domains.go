@@ -3,6 +3,7 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"strings"
 	"valar/cli/pkg/api"
 	"valar/cli/pkg/config"
 
@@ -33,7 +34,7 @@ var domainsCmd = &cobra.Command{
 			return err
 		}
 		// Sort domains before printing them out
-		slices.SortFunc(doms, func(a, b api.Domain) bool { return a.Domain < b.Domain })
+		slices.SortFunc(doms, func(a, b api.Domain) int { return strings.Compare(a.Domain, b.Domain) })
 		// Print them pretty
 		tw := ansiterm.NewTabWriter(os.Stdout, 6, 0, 1, ' ', 0)
 		fmt.Fprintln(tw, "DOMAIN\tVERIFIED\tSERVICE\tERROR")
