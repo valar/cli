@@ -109,7 +109,7 @@ var serviceLogsCmd = &cobra.Command{
 		cfg := &config.ServiceConfig{}
 		if err := cfg.ReadFromFile(functionConfiguration); errors.Is(err, os.ErrNotExist) {
 			cfg.Project = globalConfiguration.Project()
-		} else {
+		} else if err != nil {
 			return err
 		}
 		if len(args) == 1 {
