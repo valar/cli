@@ -282,3 +282,35 @@ valar auth clear [path] [user] [read | write | invoke | manage ]
 ```bash
 valar auth check [path] [user] [read | write | invoke | manage]
 ```
+> In case of a public project, this means only the project owner has write, read and invoke access, while any person may invoke a service of the project.
+
+### Cron
+
+#### View the scheduled invokes [not implemented]
+
+```bash
+valar cron
+```
+
+#### Schedule a service invocation [not implemented]
+
+```bash
+valar cron add [name] [schedule] [--path path] [--data payload] 
+```
+
+#### Remove a scheduled service invocation [not implemented]
+```bash
+valar cron remove [name] 
+```
+
+#### Trigger a cron invoke manually [not implemented]
+```bash
+valar cron trigger [name]
+```
+
+#### Inspect the invocation history [not implemented]
+```bash
+valar cron inspect [name]
+```
+
+
