@@ -398,6 +398,63 @@ func (client *Client) VerifyDomain(project, domain string) (*Domain, error) {
 	return &dom, nil
 }
 
+func (client *Client) ListSchedules(project, service string) ([]Schedule, error) {
+	var (
+		path      = fmt.Sprintf("/projects/%s/services/%s/schedules", project, service)
+		schedules []Schedule
+	)
+	if err := client.request(http.MethodGet, path, &schedules, nil); err != nil {
+		return nil, err
+	}
+	return schedules, nil
+}
+
+func (client *Client) AddSchedule(project, service string, sched Schedule) error {
+	var (
+		path       = fmt.Sprintf("/projects/%s/services/%s/schedules", project, service)
+		payload, _ = json.Marshal(sched)
+	)
+	return client.request(http.MethodPost, path, nil, bytes.NewReader(payload))
+}
+
+func (client *Client) RemoveSchedule(project, service, schedule string) error {
+	var (
+		path = fmt.Sprintf("/projects/%s/services/%s/schedules/%s", project, service, schedule)
+	)
+	return client.request(http.MethodDelete, path, nil, nil)
+}
+
+func (client *Client) TriggerSchedule(project, service, schedule string) error {
+	var (
+		path = fmt.Sprintf("/projects/%s/services/%s/schedules/%s/trigger", project, service, schedule)
+	)
+	return client.request(http.MethodPost, path, nil, nil)
+}
+
+func (client *Client) InspectSchedule(project, service, schedule string) ([]ServiceInvocation, error) {
+	var (
+		path        = fmt.Sprintf("/projects/%s/services/%s/schedules/%s", project, service, schedule)
+		invocations []ServiceInvocation
+	)
+	if err := client.request(http.MethodGet, path, &invocations, nil); err != nil {
+		return nil, err
+	}
+	return invocations, nil
+}
+
+type Schedule struct {
+	Name     string `json:"name"`
+	Timespec string `json:"timespec"`
+	Path     string `json:"path"`
+	Payload  string `json:"payload"`
+}
+type ServiceInvocation struct {
+	ID            string    `json:"id"`
+	StartTime     time.Time `json:"startTime"`
+	EndTime       time.Time `json:"endTime,omitempty"`
+	Status        string    `json:"status"`
+	TriggerSource string    `json:"triggered_by"`
+}
 type Domain struct {
 	Project    string    `json:"project"`
 	Domain     string    `json:"domain"`

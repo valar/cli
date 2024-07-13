@@ -7,8 +7,9 @@ import (
 	"strings"
 	"text/tabwriter"
 
-	"valar/cli/pkg/api"
-	"valar/cli/pkg/config"
+	"github.com/valar/cli/config"
+
+	"github.com/valar/cli/api"
 
 	"github.com/dustin/go-humanize"
 	"github.com/fatih/color"
@@ -204,11 +205,11 @@ func statusToExitCode(status string) int {
 
 func colorize(status string) string {
 	switch status {
-	case "scheduled", "waiting":
+	case "scheduled", "waiting", "pending":
 		return color.HiYellowString("%s", status)
-	case "building", "releasing", "binding":
+	case "building", "releasing", "binding", "running":
 		return color.YellowString("%s", status)
-	case "done":
+	case "done", "succeeded":
 		return color.GreenString("%s", status)
 	case "failed":
 		return color.RedString("%s", status)

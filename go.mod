@@ -1,4 +1,4 @@
-module valar/cli
+module github.com/valar/cli
 
 go 1.21
 

@@ -286,31 +286,32 @@ valar auth check [path] [user] [read | write | invoke | manage]
 
 ### Cron
 
-#### View the scheduled invokes [not implemented]
+#### View the scheduled invokes
 
 ```bash
-valar cron
+valar cron 
 ```
 
-#### Schedule a service invocation [not implemented]
+#### Schedule a service invocation
 
 ```bash
-valar cron add [name] [schedule] [--path path] [--data payload] 
+valar cron add [name] [schedule] [--path path] [--data payload] [--service service]
 ```
 
-#### Remove a scheduled service invocation [not implemented]
+#### Remove a scheduled service invocation
+
 ```bash
-valar cron remove [name] 
+valar cron remove [name] [--service service]
 ```
 
-#### Trigger a cron invoke manually [not implemented]
+#### Trigger a cron invoke manually
+
 ```bash
-valar cron trigger [name]
+valar cron trigger [name] [--service service]
 ```
 
-#### Inspect the invocation history [not implemented]
+#### Inspect the invocation history
+
 ```bash
-valar cron inspect [name]
+valar cron inspect [name] [--service service]
 ```
-
-

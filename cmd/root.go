@@ -5,7 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"valar/cli/pkg/api"
+
+	"github.com/valar/cli/api"
 
 	"github.com/spf13/cobra"
 	"gopkg.in/yaml.v3"
@@ -141,6 +142,8 @@ func init() {
 	initDomainsCmd()
 	// Configure config.go
 	initConfigCmd()
+	// Configure cron.go
+	initCronCmd()
 }
 
 func runAndHandle(f func(*cobra.Command, []string) error) func(*cobra.Command, []string) {

@@ -4,8 +4,10 @@ import (
 	"fmt"
 	"os"
 	"strings"
-	"valar/cli/pkg/api"
-	"valar/cli/pkg/config"
+
+	"github.com/valar/cli/config"
+
+	"github.com/valar/cli/api"
 
 	"github.com/juju/ansiterm"
 	"github.com/spf13/cobra"

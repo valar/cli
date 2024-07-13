@@ -6,8 +6,10 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"valar/cli/pkg/api"
-	"valar/cli/pkg/config"
+
+	"github.com/valar/cli/config"
+
+	"github.com/valar/cli/api"
 
 	"github.com/dustin/go-humanize"
 	"github.com/juju/ansiterm"

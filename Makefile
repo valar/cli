@@ -9,7 +9,7 @@ all: build
 
 build:
 	mkdir -p bin/
-	$(GOBUILD) -ldflags "-X valar/cli/cmd.version=indev" -o $(BINARY_NAME) -v
+	$(GOBUILD) -ldflags "-X github.com/valar/cli/cmd.version=indev" -o $(BINARY_NAME) -v
 
 test: 
 	$(GOTEST) -v ./...

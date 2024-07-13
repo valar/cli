@@ -8,9 +8,12 @@ import (
 	"strconv"
 	"strings"
 	"text/tabwriter"
-	"valar/cli/pkg/api"
-	"valar/cli/pkg/config"
-	"valar/cli/pkg/util"
+
+	"github.com/valar/cli/util"
+
+	"github.com/valar/cli/config"
+
+	"github.com/valar/cli/api"
 
 	"github.com/dustin/go-humanize"
 	"github.com/spf13/cobra"
