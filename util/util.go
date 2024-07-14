@@ -61,5 +61,6 @@ func CompressDir(sourcePath string, ignores []string) (string, error) {
 	if err != nil {
 		return "", err
 	}
+
 	return tmpfile.Name(), nil
 }

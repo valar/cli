@@ -5,33 +5,35 @@ import (
 	"os"
 	"strings"
 
-	"github.com/valar/cli/config"
-
-	"github.com/valar/cli/api"
-
 	"github.com/juju/ansiterm"
 	"github.com/spf13/cobra"
+	"github.com/valar/cli/api"
+	"github.com/valar/cli/config"
 	"golang.org/x/exp/slices"
 )
 
 var domainsCmd = &cobra.Command{
-	Use:   "domains",
-	Short: "Manage custom domains",
-	Args:  cobra.ExactArgs(0),
+	Use:     "domains",
+	Short:   "Manage custom domains.",
+	Aliases: []string{"dom"},
+}
+
+var domainsListCmd = &cobra.Command{
+	Use:     "list",
+	Short:   "List all domains bound to the active project.",
+	Aliases: []string{"l"},
+	Args:    cobra.ExactArgs(0),
 	Run: runAndHandle(func(cmd *cobra.Command, args []string) error {
-		var project string
 		// Attempt to read project from file if possible
-		cfg := &config.ServiceConfig{}
-		if err := cfg.ReadFromFile(functionConfiguration); err != nil {
-			project = globalConfiguration.Project()
-		} else {
-			project = cfg.Project
+		cfg, err := config.NewServiceConfigWithFallback(functionConfiguration, nil, globalConfiguration)
+		if err != nil {
+			return err
 		}
 		client, err := globalConfiguration.APIClient()
 		if err != nil {
 			return err
 		}
-		doms, err := client.ListDomains(project)
+		doms, err := client.ListDomains(cfg.Project())
 		if err != nil {
 			return err
 		}
@@ -54,23 +56,19 @@ var domainsCmd = &cobra.Command{
 
 var domainsAddCmd = &cobra.Command{
 	Use:   "add [domain]",
-	Short: "Add a new domain to the project",
+	Short: "Add a new domain to the project.",
 	Args:  cobra.ExactArgs(1),
 	Run: runAndHandle(func(cmd *cobra.Command, args []string) error {
-		var project string
 		// Attempt to read project from file if possible
-		cfg := &config.ServiceConfig{}
-		if err := cfg.ReadFromFile(functionConfiguration); err != nil {
-			// Fall back to global project
-			project = globalConfiguration.Project()
-		} else {
-			project = cfg.Project
+		cfg, err := config.NewServiceConfigWithFallback(functionConfiguration, nil, globalConfiguration)
+		if err != nil {
+			return err
 		}
 		client, err := globalConfiguration.APIClient()
 		if err != nil {
 			return err
 		}
-		records, err := client.AddDomain(project, args[0])
+		records, err := client.AddDomain(cfg.Project(), args[0])
 		if err != nil {
 			return err
 		}
@@ -87,23 +85,19 @@ var domainsAddCmd = &cobra.Command{
 
 var domainsDeleteCmd = &cobra.Command{
 	Use:   "delete [domain]",
-	Short: "Deletes an existing domain from the project",
+	Short: "Deletes an existing domain from the project.",
 	Args:  cobra.ExactArgs(1),
 	Run: runAndHandle(func(cmd *cobra.Command, args []string) error {
-		var project string
 		// Attempt to read project from file if possible
-		cfg := &config.ServiceConfig{}
-		if err := cfg.ReadFromFile(functionConfiguration); err != nil {
-			// Fall back to global project
-			project = globalConfiguration.Project()
-		} else {
-			project = cfg.Project
+		cfg, err := config.NewServiceConfigWithFallback(functionConfiguration, nil, globalConfiguration)
+		if err != nil {
+			return err
 		}
 		client, err := globalConfiguration.APIClient()
 		if err != nil {
 			return err
 		}
-		if err := client.DeleteDomain(project, args[0]); err != nil {
+		if err := client.DeleteDomain(cfg.Project(), args[0]); err != nil {
 			return err
 		}
 		return nil
@@ -112,23 +106,19 @@ var domainsDeleteCmd = &cobra.Command{
 
 var domainsVerifyCmd = &cobra.Command{
 	Use:   "verify [domain]",
-	Short: "Verify a newly added domain",
+	Short: "Verify a newly added domain.",
 	Args:  cobra.ExactArgs(1),
 	Run: runAndHandle(func(cmd *cobra.Command, args []string) error {
-		var project string
 		// Attempt to read project from file if possible
-		cfg := &config.ServiceConfig{}
-		if err := cfg.ReadFromFile(functionConfiguration); err != nil {
-			// Fall back to global project
-			project = globalConfiguration.Project()
-		} else {
-			project = cfg.Project
+		cfg, err := config.NewServiceConfigWithFallback(functionConfiguration, nil, globalConfiguration)
+		if err != nil {
+			return err
 		}
 		client, err := globalConfiguration.APIClient()
 		if err != nil {
 			return err
 		}
-		dom, err := client.VerifyDomain(project, args[0])
+		dom, err := client.VerifyDomain(cfg.Project(), args[0])
 		if err != nil {
 			return err
 		}
@@ -138,73 +128,59 @@ var domainsVerifyCmd = &cobra.Command{
 }
 
 var domainsLinkAllowInsecureTraffic bool
+var domainsLinkService string
 
 var domainsLinkCmd = &cobra.Command{
-	Use:   "link [--insecure] [domain] ([service])",
-	Short: "Link a domain to a service",
-	Args:  cobra.RangeArgs(1, 2),
+	Use:   "link [--insecure] [--service service] domain",
+	Short: "Link a domain to a service.",
+	Args:  cobra.ExactArgs(1),
 	Run: runAndHandle(func(cmd *cobra.Command, args []string) error {
-		var project, svc string
 		// Attempt to read project from file if possible
-		cfg := &config.ServiceConfig{}
-		if err := cfg.ReadFromFile(functionConfiguration); err != nil {
-			project = globalConfiguration.Project()
-		} else {
-			project = cfg.Project
-			svc = cfg.Service
-		}
-		// If arg exists, replace service
-		if len(args) == 2 {
-			svc = args[1]
-		}
-		// If svc is still missing, fail
-		if svc == "" {
-			return fmt.Errorf("missing service name")
+		cfg, err := config.NewServiceConfigWithFallback(functionConfiguration, &domainsLinkService, globalConfiguration)
+		if err != nil {
+			return err
 		}
 		client, err := globalConfiguration.APIClient()
 		if err != nil {
 			return err
 		}
-		return client.LinkDomain(project, args[0], svc, domainsLinkAllowInsecureTraffic)
+		return client.LinkDomain(api.LinkDomainArgs{
+			Project:              cfg.Project(),
+			Service:              cfg.Service(),
+			Domain:               args[0],
+			AllowInsecureTraffic: domainsLinkAllowInsecureTraffic,
+		})
 	}),
 }
 
+var domainsUnlinkService string
+
 var domainsUnlinkCmd = &cobra.Command{
-	Use:   "unlink [domain] ([service])",
-	Short: "Unlink a domain from a service",
-	Args:  cobra.RangeArgs(1, 2),
+	Use:   "unlink [--service service] [domain]",
+	Short: "Unlink a domain from a service.",
+	Args:  cobra.ExactArgs(1),
 	Run: runAndHandle(func(cmd *cobra.Command, args []string) error {
-		var project, svc string
 		// Attempt to read project from file if possible
-		cfg := &config.ServiceConfig{}
-		if err := cfg.ReadFromFile(functionConfiguration); err != nil {
-			project = globalConfiguration.Project()
-		} else {
-			project = cfg.Project
-			svc = cfg.Service
-		}
-		// If arg exists, replace service
-		if len(args) == 2 {
-			svc = args[1]
-		}
-		// If svc is still missing, fail
-		if svc == "" {
-			return fmt.Errorf("missing service name")
+		cfg, err := config.NewServiceConfigWithFallback(functionConfiguration, &domainsUnlinkService, globalConfiguration)
+		if err != nil {
+			return err
 		}
 		client, err := globalConfiguration.APIClient()
 		if err != nil {
 			return err
 		}
-		return client.UnlinkDomain(project, args[0], svc)
+		return client.UnlinkDomain(api.UnlinkDomainArgs{
+			Project: cfg.Project(),
+			Service: cfg.Service(),
+			Domain:  args[0],
+		})
 	}),
 }
 
 func initDomainsCmd() {
+	domainsLinkCmd.Flags().StringVarP(&domainsLinkService, "service", "s", "", "The service to link the domain to")
 	domainsLinkCmd.Flags().BoolVarP(&domainsLinkAllowInsecureTraffic, "insecure", "i", false, "Allow insecure traffic to the service. Disables the default HTTPS redirect for this domain.")
-	domainsCmd.AddCommand(domainsAddCmd)
-	domainsCmd.AddCommand(domainsVerifyCmd)
-	domainsCmd.AddCommand(domainsLinkCmd)
-	domainsCmd.AddCommand(domainsUnlinkCmd)
-	domainsCmd.AddCommand(domainsDeleteCmd)
+	domainsUnlinkCmd.Flags().StringVarP(&domainsUnlinkService, "service", "s", "", "The service to unlink the domain from")
+	domainsCmd.AddCommand(domainsListCmd, domainsAddCmd, domainsVerifyCmd, domainsLinkCmd, domainsUnlinkCmd, domainsDeleteCmd)
 	rootCmd.AddCommand(domainsCmd)
 }

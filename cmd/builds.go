@@ -7,23 +7,29 @@ import (
 	"strings"
 	"text/tabwriter"
 
-	"github.com/valar/cli/config"
-
-	"github.com/valar/cli/api"
-
 	"github.com/dustin/go-humanize"
 	"github.com/fatih/color"
 	"github.com/juju/ansiterm"
 	"github.com/spf13/cobra"
+	"github.com/valar/cli/api"
+	"github.com/valar/cli/config"
 )
 
+var buildService string
+
 var buildCmd = &cobra.Command{
-	Use:   "builds [prefix]",
+	Use:     "build [--service service]",
+	Short:   "Manage the builds of a service",
+	Aliases: []string{"builds", "b"},
+}
+
+var buildListCmd = &cobra.Command{
+	Use:   "list [prefix]",
 	Short: "List builds of the service",
 	Args:  cobra.MaximumNArgs(1),
 	Run: runAndHandle(func(cmd *cobra.Command, args []string) error {
-		cfg := &config.ServiceConfig{}
-		if err := cfg.ReadFromFile(functionConfiguration); err != nil {
+		cfg, err := config.NewServiceConfigWithFallback(functionConfiguration, &buildService, globalConfiguration)
+		if err != nil {
 			return err
 		}
 		client, err := globalConfiguration.APIClient()
@@ -42,8 +48,8 @@ var buildAbortCmd = &cobra.Command{
 	Short: "Abort a scheduled or running build",
 	Args:  cobra.MaximumNArgs(1),
 	Run: runAndHandle(func(cmd *cobra.Command, args []string) error {
-		cfg := &config.ServiceConfig{}
-		if err := cfg.ReadFromFile(functionConfiguration); err != nil {
+		cfg, err := config.NewServiceConfigWithFallback(functionConfiguration, &buildService, globalConfiguration)
+		if err != nil {
 			return err
 		}
 		client, err := globalConfiguration.APIClient()
@@ -53,19 +59,19 @@ var buildAbortCmd = &cobra.Command{
 		if len(args) < 1 {
 			args = append(args, "")
 		}
-		return client.AbortBuild(cfg.Project, cfg.Service, args[0])
+		return client.AbortBuild(cfg.Project(), cfg.Service(), args[0])
 	}),
 }
 
 var logsFollow = false
 
 var buildLogsCmd = &cobra.Command{
-	Use:   "logs [task]",
+	Use:   "logs [buildid]",
 	Short: "Show the build logs of the given task",
 	Args:  cobra.MaximumNArgs(1),
 	Run: runAndHandle(func(cmd *cobra.Command, args []string) error {
-		cfg := &config.ServiceConfig{}
-		if err := cfg.ReadFromFile(functionConfiguration); err != nil {
+		cfg, err := config.NewServiceConfigWithFallback(functionConfiguration, &buildService, globalConfiguration)
+		if err != nil {
 			return err
 		}
 		client, err := globalConfiguration.APIClient()
@@ -77,7 +83,7 @@ var buildLogsCmd = &cobra.Command{
 		if len(args) > 0 {
 			prefix = args[0]
 		}
-		builds, err := client.ListBuilds(cfg.Project, cfg.Service, prefix)
+		builds, err := client.ListBuilds(cfg.Project(), cfg.Service(), prefix)
 		if err != nil {
 			return err
 		}
@@ -88,19 +94,19 @@ var buildLogsCmd = &cobra.Command{
 		sort.Slice(builds, func(i, j int) bool { return builds[i].CreatedAt.After(builds[j].CreatedAt) })
 		latestBuildID := builds[0].ID
 		if logsFollow {
-			return client.StreamBuildLogs(cfg.Project, cfg.Service, latestBuildID, os.Stdout)
+			return client.StreamBuildLogs(cfg.Project(), cfg.Service(), latestBuildID, os.Stdout)
 		}
-		return client.ShowBuildLogs(cfg.Project, cfg.Service, latestBuildID, os.Stdout)
+		return client.ShowBuildLogs(cfg.Project(), cfg.Service(), latestBuildID, os.Stdout)
 	}),
 }
 
-var inspectCmd = &cobra.Command{
+var buildInspectCmd = &cobra.Command{
 	Use:   "inspect [prefix]",
 	Short: "Inspect the first matched task with the given ID prefix",
 	Args:  cobra.ExactArgs(1),
 	Run: runAndHandle(func(cmd *cobra.Command, args []string) error {
-		cfg := &config.ServiceConfig{}
-		if err := cfg.ReadFromFile(functionConfiguration); err != nil {
+		cfg, err := config.NewServiceConfigWithFallback(functionConfiguration, &buildService, globalConfiguration)
+		if err != nil {
 			return err
 		}
 		client, err := globalConfiguration.APIClient()
@@ -111,13 +117,13 @@ var inspectCmd = &cobra.Command{
 	}),
 }
 
-var statusCmd = &cobra.Command{
+var buildStatusCmd = &cobra.Command{
 	Use:   "status [buildid]",
 	Short: "Show the status of the given build",
 	Args:  cobra.ExactArgs(1),
 	Run: runAndHandle(func(cmd *cobra.Command, args []string) error {
-		cfg := &config.ServiceConfig{}
-		if err := cfg.ReadFromFile(functionConfiguration); err != nil {
+		cfg, err := config.NewServiceConfigWithFallback(functionConfiguration, &buildService, globalConfiguration)
+		if err != nil {
 			return err
 		}
 		client, err := globalConfiguration.APIClient()
@@ -129,8 +135,8 @@ var statusCmd = &cobra.Command{
 	}),
 }
 
-func listBuilds(client *api.Client, cfg *config.ServiceConfig, id string) error {
-	builds, err := client.ListBuilds(cfg.Project, cfg.Service, id)
+func listBuilds(client *api.Client, cfg config.ServiceConfig, id string) error {
+	builds, err := client.ListBuilds(cfg.Project(), cfg.Service(), id)
 	if err != nil {
 		return err
 	}
@@ -151,8 +157,8 @@ func listBuilds(client *api.Client, cfg *config.ServiceConfig, id string) error 
 	return nil
 }
 
-func showBuildStatusAndExit(client *api.Client, cfg *config.ServiceConfig, id string) error {
-	build, err := client.InspectBuild(cfg.Project, cfg.Service, id)
+func showBuildStatusAndExit(client *api.Client, cfg config.ServiceConfig, id string) error {
+	build, err := client.InspectBuild(cfg.Project(), cfg.Service(), id)
 	if err != nil {
 		return err
 	}
@@ -161,8 +167,8 @@ func showBuildStatusAndExit(client *api.Client, cfg *config.ServiceConfig, id st
 	return nil
 }
 
-func inspectBuild(client *api.Client, cfg *config.ServiceConfig, id string) error {
-	build, err := client.InspectBuild(cfg.Project, cfg.Service, id)
+func inspectBuild(client *api.Client, cfg config.ServiceConfig, id string) error {
+	build, err := client.InspectBuild(cfg.Project(), cfg.Service(), id)
 	if err != nil {
 		return err
 	}
@@ -180,13 +186,13 @@ func inspectBuild(client *api.Client, cfg *config.ServiceConfig, id string) erro
 	return nil
 }
 
-func deployBuild(client *api.Client, cfg *config.ServiceConfig, id string) error {
+func deployBuild(client *api.Client, cfg config.ServiceConfig, id string) error {
 	var deployReq api.DeployRequest
 	deployReq.Build = id
-	for _, kv := range cfg.Deployment.Environment {
+	for _, kv := range cfg.Deployment().Environment {
 		deployReq.Environment = append(deployReq.Environment, api.KVPair(kv))
 	}
-	deployment, err := client.SubmitDeploy(cfg.Project, cfg.Service, &deployReq)
+	deployment, err := client.SubmitDeploy(cfg.Project(), cfg.Service(), &deployReq)
 	if err != nil {
 		return err
 	}
@@ -219,10 +225,8 @@ func colorize(status string) string {
 }
 
 func initBuildsCmd() {
-	buildLogsCmd.PersistentFlags().BoolVarP(&logsFollow, "follow", "f", false, "follow the logs")
-	buildCmd.AddCommand(inspectCmd)
-	buildCmd.AddCommand(buildLogsCmd)
-	buildCmd.AddCommand(buildAbortCmd)
-	buildCmd.AddCommand(statusCmd)
+	buildCmd.PersistentFlags().StringVarP(&buildService, "service", "s", "", "The service to inspect for builds")
+	buildLogsCmd.PersistentFlags().BoolVarP(&logsFollow, "follow", "f", false, "Follow the logs")
+	buildCmd.AddCommand(buildListCmd, buildInspectCmd, buildLogsCmd, buildAbortCmd, buildStatusCmd)
 	rootCmd.AddCommand(buildCmd)
 }

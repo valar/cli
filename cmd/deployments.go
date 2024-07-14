@@ -7,22 +7,29 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/valar/cli/config"
-
-	"github.com/valar/cli/api"
-
 	"github.com/dustin/go-humanize"
 	"github.com/juju/ansiterm"
 	"github.com/spf13/cobra"
+	"github.com/valar/cli/api"
+	"github.com/valar/cli/config"
 )
 
+var deploymentService string
+
 var deploymentCmd = &cobra.Command{
-	Use:   "deploys",
-	Short: "List deployments of the service",
-	Args:  cobra.NoArgs,
+	Use:     "deployment",
+	Short:   "Manage the deployments of a service",
+	Aliases: []string{"deploys", "deploy", "d"},
+}
+
+var deploymentListCmd = &cobra.Command{
+	Use:     "list",
+	Short:   "List deployments of the service",
+	Aliases: []string{"l"},
+	Args:    cobra.NoArgs,
 	Run: runAndHandle(func(cmd *cobra.Command, args []string) error {
-		cfg := &config.ServiceConfig{}
-		if err := cfg.ReadFromFile(functionConfiguration); err != nil {
+		cfg, err := config.NewServiceConfigWithFallback(functionConfiguration, &deploymentService, globalConfiguration)
+		if err != nil {
 			return err
 		}
 		client, err := globalConfiguration.APIClient()
@@ -33,13 +40,13 @@ var deploymentCmd = &cobra.Command{
 	}),
 }
 
-var createCmd = &cobra.Command{
+var deploymentCreateCmd = &cobra.Command{
 	Use:   "create [build]",
 	Short: "Deploy the build with the fully given ID",
 	Args:  cobra.ExactArgs(1),
 	Run: runAndHandle(func(cmd *cobra.Command, args []string) error {
-		cfg := &config.ServiceConfig{}
-		if err := cfg.ReadFromFile(functionConfiguration); err != nil {
+		cfg, err := config.NewServiceConfigWithFallback(functionConfiguration, &deploymentService, globalConfiguration)
+		if err != nil {
 			return err
 		}
 		client, err := globalConfiguration.APIClient()
@@ -52,13 +59,13 @@ var createCmd = &cobra.Command{
 
 var rollbackDelta int
 
-var rollbackCmd = &cobra.Command{
+var deploymentRollbackCmd = &cobra.Command{
 	Use:   "rollback",
 	Short: "Reverse service to the previous deployment",
 	Args:  cobra.NoArgs,
 	Run: runAndHandle(func(cmd *cobra.Command, args []string) error {
-		cfg := &config.ServiceConfig{}
-		if err := cfg.ReadFromFile(functionConfiguration); err != nil {
+		cfg, err := config.NewServiceConfigWithFallback(functionConfiguration, &deploymentService, globalConfiguration)
+		if err != nil {
 			return err
 		}
 		client, err := globalConfiguration.APIClient()
@@ -69,8 +76,8 @@ var rollbackCmd = &cobra.Command{
 	}),
 }
 
-func rollbackLatestDeployment(client *api.Client, cfg *config.ServiceConfig) error {
-	deployments, err := client.ListDeployments(cfg.Project, cfg.Service)
+func rollbackLatestDeployment(client *api.Client, cfg config.ServiceConfig) error {
+	deployments, err := client.ListDeployments(cfg.Project(), cfg.Service())
 	if err != nil {
 		return err
 	}
@@ -82,7 +89,7 @@ func rollbackLatestDeployment(client *api.Client, cfg *config.ServiceConfig) err
 		return deployments[i].Version > deployments[j].Version
 	})
 	// Get targeted version identifier
-	deployment, err := client.RollbackDeploy(cfg.Project, cfg.Service, &api.RollbackRequest{
+	deployment, err := client.RollbackDeploy(cfg.Project(), cfg.Service(), &api.RollbackRequest{
 		Version: deployments[rollbackDelta].Version,
 	})
 	if err != nil {
@@ -92,8 +99,8 @@ func rollbackLatestDeployment(client *api.Client, cfg *config.ServiceConfig) err
 	return nil
 }
 
-func listDeployments(client *api.Client, cfg *config.ServiceConfig) error {
-	deployments, err := client.ListDeployments(cfg.Project, cfg.Service)
+func listDeployments(client *api.Client, cfg config.ServiceConfig) error {
+	deployments, err := client.ListDeployments(cfg.Project(), cfg.Service())
 	if err != nil {
 		return err
 	}
@@ -117,8 +124,8 @@ func listDeployments(client *api.Client, cfg *config.ServiceConfig) error {
 }
 
 func initDeploymentsCmd() {
-	rollbackCmd.Flags().IntVarP(&rollbackDelta, "delta", "d", 1, "number of deployments to roll back")
-	deploymentCmd.AddCommand(rollbackCmd)
-	deploymentCmd.AddCommand(createCmd)
+	deploymentRollbackCmd.Flags().IntVarP(&rollbackDelta, "delta", "d", 1, "Number of deployments to roll back")
+	deploymentCmd.PersistentFlags().StringVarP(&deploymentService, "service", "s", "", "The service to manage")
+	deploymentCmd.AddCommand(deploymentListCmd, deploymentRollbackCmd, deploymentCreateCmd)
 	rootCmd.AddCommand(deploymentCmd)
 }

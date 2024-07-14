@@ -1,8 +1,10 @@
 package config
 
 import (
+	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -66,27 +68,110 @@ type DeploymentConfig struct {
 	Environment []EnvironmentConfig `yaml:"environment"`
 }
 
-type ServiceConfig struct {
-	Project    string           `yaml:"project,omitempty"`
-	Service    string           `yaml:"service,omitempty"`
-	Build      BuildConfig      `yaml:"build,omitempty"`
-	Deployment DeploymentConfig `yaml:"deployment"`
+type ServiceConfig interface {
+	Project() string
+	Service() string
+	Build() BuildConfig
+	Deployment() DeploymentConfig
 }
 
-func (config *ServiceConfig) ReadFromFile(path string) error {
-	fd, err := os.Open(path)
+type ValidatedServiceConfig struct {
+	yaml ServiceConfigYAML
+}
+
+func (w *ValidatedServiceConfig) Project() string {
+	if w.yaml.Project == "" {
+		fmt.Fprintln(os.Stderr, "Operation requires service project.")
+		os.Exit(1)
+	}
+	return w.yaml.Project
+}
+
+func (w *ValidatedServiceConfig) Service() string {
+	if w.yaml.Service == "" {
+		fmt.Fprintln(os.Stderr, "Operation requires service reference (may be specified using --service).")
+		os.Exit(1)
+	}
+	return w.yaml.Service
+}
+
+func (w *ValidatedServiceConfig) Build() BuildConfig {
+	if w.yaml.Build == nil {
+		fmt.Fprintln(os.Stderr, "Operation requires build specification.")
+		os.Exit(1)
+	}
+	return *w.yaml.Build
+}
+
+func (w *ValidatedServiceConfig) Deployment() DeploymentConfig {
+	if w.yaml.Deployment == nil {
+		fmt.Fprintln(os.Stderr, "Operation requires deployment specification.")
+		os.Exit(1)
+	}
+	return *w.yaml.Deployment
+}
+
+func (w *ValidatedServiceConfig) Unwrap() ServiceConfigYAML {
+	return ServiceConfigYAML{}
+}
+
+func NewServiceConfigFromFile(path string) (*ValidatedServiceConfig, error) {
+	cfg := ServiceConfigYAML{}
+	if err := cfg.ReadFromFile(path); err != nil {
+		return nil, err
+	}
+	return &ValidatedServiceConfig{yaml: cfg}, nil
+}
+
+func NewServiceConfigWithFallback(path string, service *string, cli *CLIConfig) (*ValidatedServiceConfig, error) {
+	cfg := ServiceConfigYAML{}
+	if err := cfg.ReadFromFile(path); errors.Is(err, os.ErrNotExist) {
+		if service == nil {
+			return &ValidatedServiceConfig{ServiceConfigYAML{Project: cli.Project()}}, nil
+		}
+		return &ValidatedServiceConfig{ServiceConfigYAML{Project: cli.Project(), Service: *service}}, nil
+	} else if err == nil && service != nil && len(*service) > 0 {
+		return &ValidatedServiceConfig{ServiceConfigYAML{Project: cfg.Project, Service: *service}}, nil
+	}
+	return &ValidatedServiceConfig{yaml: cfg}, nil
+}
+
+type ServiceConfigYAML struct {
+	Project    string            `yaml:"project,omitempty"`
+	Service    string            `yaml:"service,omitempty"`
+	Build      *BuildConfig      `yaml:"build"`
+	Deployment *DeploymentConfig `yaml:"deployment"`
+
+	filePath string `yaml:"-"`
+}
+
+func (config *ServiceConfigYAML) ReadFromFile(name string) error {
+	// Do recursive discovery
+	cwd, err := os.Getwd()
 	if err != nil {
-		return fmt.Errorf("config load: %w", err)
+		return fmt.Errorf("getwd: %w", err)
 	}
-	defer fd.Close()
-	decoder := yaml.NewDecoder(fd)
-	if err := decoder.Decode(config); err != nil {
-		return fmt.Errorf("config read: %w", err)
+	parent := ""
+	for cwd != parent {
+		parent = cwd
+		path := filepath.Join(filepath.Join(cwd, name))
+		fd, err := os.Open(path)
+		if err != nil {
+			cwd, _ = filepath.Split(filepath.Clean(cwd))
+			continue
+		}
+		defer fd.Close()
+		decoder := yaml.NewDecoder(fd)
+		if err := decoder.Decode(config); err != nil {
+			return fmt.Errorf("config read: %w", err)
+		}
+		config.filePath = path
+		return nil
 	}
-	return nil
+	return os.ErrNotExist
 }
 
-func (config *ServiceConfig) WriteToFile(path string) error {
+func (config *ServiceConfigYAML) WriteToFile(path string) error {
 	fd, err := os.Create(path)
 	if err != nil {
 		return fmt.Errorf("config write: %w", err)
@@ -97,4 +182,8 @@ func (config *ServiceConfig) WriteToFile(path string) error {
 		return fmt.Errorf("config write: %w", err)
 	}
 	return nil
+}
+
+func (config *ServiceConfigYAML) WriteBack() error {
+	return config.WriteToFile(config.filePath)
 }

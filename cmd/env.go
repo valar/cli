@@ -6,25 +6,28 @@ import (
 	"strings"
 	"text/tabwriter"
 
-	"github.com/valar/cli/config"
-
-	"github.com/valar/cli/api"
-
 	"github.com/spf13/cobra"
+	"github.com/valar/cli/api"
+	"github.com/valar/cli/config"
 )
 
 var envCmd = &cobra.Command{
 	Use:   "env",
 	Short: "Manage environment variables",
+}
+
+var envListCmd = &cobra.Command{
+	Use:   "list",
+	Short: "List all environment variables bound to the specified scope.",
 	Args:  cobra.NoArgs,
 	Run: runAndHandle(func(cmd *cobra.Command, args []string) error {
-		cfg := &config.ServiceConfig{}
-		if err := cfg.ReadFromFile(functionConfiguration); err != nil {
+		cfg, err := config.NewServiceConfigWithFallback(functionConfiguration, nil, globalConfiguration)
+		if err != nil {
 			return err
 		}
-		kvs := cfg.Deployment.Environment
+		kvs := cfg.Deployment().Environment
 		if envBuild {
-			kvs = cfg.Build.Environment
+			kvs = cfg.Build().Environment
 		}
 		switch envFormat {
 		case "raw":
@@ -54,8 +57,8 @@ var envSetCmd = &cobra.Command{
 	Short: "Set variable to the given value",
 	Args:  cobra.ExactArgs(1),
 	Run: runAndHandle(func(cmd *cobra.Command, args []string) error {
-		cfg := &config.ServiceConfig{}
-		if err := cfg.ReadFromFile(functionConfiguration); err != nil {
+		cfg, err := config.NewServiceConfigWithFallback(functionConfiguration, nil, globalConfiguration)
+		if err != nil {
 			return err
 		}
 		client, err := globalConfiguration.APIClient()
@@ -72,7 +75,7 @@ var envSetCmd = &cobra.Command{
 			Value: kvp[1],
 		}
 		if envSetSecret {
-			kv, err = client.EncryptEnvironment(cfg.Project, cfg.Service, &api.KVPair{
+			kv, err = client.EncryptEnvironment(cfg.Project(), cfg.Service(), &api.KVPair{
 				Key:    kvp[0],
 				Value:  kvp[1],
 				Secret: true,
@@ -81,9 +84,10 @@ var envSetCmd = &cobra.Command{
 				return err
 			}
 		}
-		target := &cfg.Deployment.Environment
+		yamlCfg := cfg.Unwrap()
+		target := &yamlCfg.Deployment.Environment
 		if envBuild {
-			target = &cfg.Build.Environment
+			target = &yamlCfg.Build.Environment
 		}
 		// Check for conflict
 		replaced := false
@@ -97,7 +101,7 @@ var envSetCmd = &cobra.Command{
 		if !replaced {
 			*target = append(*target, config.EnvironmentConfig(*kv))
 		}
-		return cfg.WriteToFile(functionConfiguration)
+		return yamlCfg.WriteBack()
 	}),
 }
 
@@ -106,13 +110,14 @@ var envDeleteCmd = &cobra.Command{
 	Short: "Delete the environment variable",
 	Args:  cobra.ExactArgs(1),
 	Run: runAndHandle(func(cmd *cobra.Command, args []string) error {
-		cfg := &config.ServiceConfig{}
-		if err := cfg.ReadFromFile(functionConfiguration); err != nil {
+		cfg, err := config.NewServiceConfigWithFallback(functionConfiguration, nil, globalConfiguration)
+		if err != nil {
 			return err
 		}
-		target := &cfg.Deployment.Environment
+		yamlCfg := cfg.Unwrap()
+		target := &yamlCfg.Deployment.Environment
 		if envBuild {
-			target = &cfg.Build.Environment
+			target = &yamlCfg.Build.Environment
 		}
 		// If found, swap key to end and delete item
 		index := -1
@@ -128,7 +133,7 @@ var envDeleteCmd = &cobra.Command{
 		}
 		(*target)[index] = (*target)[len(*target)-1]
 		(*target) = (*target)[:len(*target)-1]
-		return cfg.WriteToFile(functionConfiguration)
+		return yamlCfg.WriteBack()
 	}),
 }
 
@@ -136,7 +141,6 @@ func initEnvCmd() {
 	envSetCmd.Flags().BoolVar(&envSetSecret, "secret", false, "Hide variable content in logs and other listings")
 	envCmd.PersistentFlags().BoolVarP(&envBuild, "build", "b", false, "Build scope instead of deployments")
 	envCmd.Flags().StringVar(&envFormat, "format", "table", "Choose display format (table|raw)")
-	envCmd.AddCommand(envSetCmd)
-	envCmd.AddCommand(envDeleteCmd)
+	envCmd.AddCommand(envListCmd, envSetCmd, envDeleteCmd)
 	rootCmd.AddCommand(envCmd)
 }

@@ -6,12 +6,10 @@ import (
 	"strings"
 	"text/tabwriter"
 
-	"github.com/valar/cli/config"
-
-	"github.com/valar/cli/api"
-
 	"github.com/dustin/go-humanize"
 	"github.com/spf13/cobra"
+	"github.com/valar/cli/api"
+	"github.com/valar/cli/config"
 )
 
 var (
@@ -20,16 +18,21 @@ var (
 	cronCmd = &cobra.Command{
 		Use:   "cron",
 		Short: "Manage scheduled invocations of a service",
+	}
+
+	cronListCmd = &cobra.Command{
+		Use:   "list",
+		Short: "List all cron schedules for a service",
 		Run: runAndHandle(func(cmd *cobra.Command, args []string) error {
-			cfg := &config.ServiceConfig{}
-			if err := cfg.ReadFromFile(functionConfiguration); err != nil {
+			cfg, err := config.NewServiceConfigWithFallback(functionConfiguration, &cronService, globalConfiguration)
+			if err != nil {
 				return err
 			}
 			client, err := globalConfiguration.APIClient()
 			if err != nil {
 				return err
 			}
-			schedules, err := client.ListSchedules(cfg.Project, cfg.Service)
+			schedules, err := client.ListSchedules(cfg.Project(), cfg.Service())
 			if err != nil {
 				return err
 			}
@@ -50,15 +53,15 @@ var (
 		Short: "Add or edit a service invocation schedule",
 		Args:  cobra.ExactArgs(2),
 		Run: runAndHandle(func(cmd *cobra.Command, args []string) error {
-			cfg := &config.ServiceConfig{}
-			if err := cfg.ReadFromFile(functionConfiguration); err != nil {
+			cfg, err := config.NewServiceConfigWithFallback(functionConfiguration, &cronService, globalConfiguration)
+			if err != nil {
 				return err
 			}
 			client, err := globalConfiguration.APIClient()
 			if err != nil {
 				return err
 			}
-			if err := client.AddSchedule(cfg.Project, cfg.Service, api.Schedule{
+			if err := client.AddSchedule(cfg.Project(), cfg.Service(), api.Schedule{
 				Name:     args[0],
 				Timespec: args[1],
 				Payload:  cronAddPayload,
@@ -75,15 +78,15 @@ var (
 		Short: "Manually triggers a scheduled invocation",
 		Args:  cobra.ExactArgs(1),
 		Run: runAndHandle(func(cmd *cobra.Command, args []string) error {
-			cfg := &config.ServiceConfig{}
-			if err := cfg.ReadFromFile(functionConfiguration); err != nil {
+			cfg, err := config.NewServiceConfigWithFallback(functionConfiguration, &cronService, globalConfiguration)
+			if err != nil {
 				return err
 			}
 			client, err := globalConfiguration.APIClient()
 			if err != nil {
 				return err
 			}
-			if err := client.TriggerSchedule(cfg.Project, cfg.Service, args[0]); err != nil {
+			if err := client.TriggerSchedule(cfg.Project(), cfg.Service(), args[0]); err != nil {
 				return err
 			}
 			return nil
@@ -94,15 +97,15 @@ var (
 		Short: "Remove a service invocation schedule",
 		Args:  cobra.ExactArgs(1),
 		Run: runAndHandle(func(cmd *cobra.Command, args []string) error {
-			cfg := &config.ServiceConfig{}
-			if err := cfg.ReadFromFile(functionConfiguration); err != nil {
+			cfg, err := config.NewServiceConfigWithFallback(functionConfiguration, &cronService, globalConfiguration)
+			if err != nil {
 				return err
 			}
 			client, err := globalConfiguration.APIClient()
 			if err != nil {
 				return err
 			}
-			if err := client.RemoveSchedule(cfg.Project, cfg.Service, args[0]); err != nil {
+			if err := client.RemoveSchedule(cfg.Project(), cfg.Service(), args[0]); err != nil {
 				return err
 			}
 			return nil
@@ -113,15 +116,15 @@ var (
 		Short: "Inspect the invocation history of a service schedule",
 		Args:  cobra.ExactArgs(1),
 		Run: runAndHandle(func(cmd *cobra.Command, args []string) error {
-			cfg := &config.ServiceConfig{}
-			if err := cfg.ReadFromFile(functionConfiguration); err != nil {
+			cfg, err := config.NewServiceConfigWithFallback(functionConfiguration, &cronService, globalConfiguration)
+			if err != nil {
 				return err
 			}
 			client, err := globalConfiguration.APIClient()
 			if err != nil {
 				return err
 			}
-			invocations, err := client.InspectSchedule(cfg.Project, cfg.Service, args[0])
+			invocations, err := client.InspectSchedule(cfg.Project(), cfg.Service(), args[0])
 			if err != nil {
 				return err
 			}
@@ -153,7 +156,7 @@ var (
 func initCronCmd() {
 	rootCmd.AddCommand(cronCmd)
 	cronCmd.PersistentFlags().StringVarP(&cronService, "service", "s", "", "The service to manage cron schedules for")
-	cronCmd.AddCommand(cronAddCmd, cronTriggerCmd, cronRemoveCmd, cronInspectCmd)
+	cronCmd.AddCommand(cronListCmd, cronAddCmd, cronTriggerCmd, cronRemoveCmd, cronInspectCmd)
 	cronAddCmd.Flags().StringVar(&cronAddPath, "path", "/", "The service path to send a request to")
 	cronAddCmd.Flags().StringVar(&cronAddPayload, "payload", "", "The body payload to send in a request")
 }

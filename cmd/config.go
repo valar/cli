@@ -6,6 +6,7 @@ import (
 
 	"github.com/juju/ansiterm"
 	"github.com/spf13/cobra"
+	"github.com/valar/cli/config"
 	"gopkg.in/yaml.v3"
 )
 
@@ -53,7 +54,7 @@ var configEndpointSetCmd = &cobra.Command{
 			ep.URL = configEndpointSetUrl
 		}
 		if globalConfiguration.Endpoints == nil {
-			globalConfiguration.Endpoints = make(map[string]valarEndpoint)
+			globalConfiguration.Endpoints = map[string]config.APIEndpoint{}
 		}
 		globalConfiguration.Endpoints[args[0]] = ep
 		if err := globalConfiguration.Write(); err != nil {

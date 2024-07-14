@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"errors"
 	"fmt"
 	"os"
 	"sort"
@@ -9,14 +8,11 @@ import (
 	"strings"
 	"text/tabwriter"
 
-	"github.com/valar/cli/util"
-
-	"github.com/valar/cli/config"
-
-	"github.com/valar/cli/api"
-
 	"github.com/dustin/go-humanize"
 	"github.com/spf13/cobra"
+	"github.com/valar/cli/api"
+	"github.com/valar/cli/config"
+	"github.com/valar/cli/util"
 )
 
 const functionConfiguration = ".valar.yml"
@@ -26,7 +22,7 @@ var initProject, initConstructor string
 var initForce bool
 
 var initCmd = &cobra.Command{
-	Use:   "init [service]",
+	Use:   "init service",
 	Short: "Configure a new service",
 	Args:  cobra.ExactArgs(1),
 	Run: runAndHandle(func(cmd *cobra.Command, args []string) error {
@@ -36,13 +32,14 @@ var initCmd = &cobra.Command{
 		if err := api.VerifyNames(initProject, args[0]); err != nil {
 			return fmt.Errorf("bad naming scheme: %w", err)
 		}
-		cfg := &config.ServiceConfig{
+		cfg := &config.ServiceConfigYAML{
 			Project: initProject,
 			Service: args[0],
-			Build: config.BuildConfig{
+			Build: &config.BuildConfig{
 				Constructor: initConstructor,
 				Ignore:      initIgnore,
 			},
+			Deployment: &config.DeploymentConfig{},
 		}
 		if _, err := os.Stat(functionConfiguration); err == nil && !initForce {
 			return fmt.Errorf("configuration already exists, please use --force flag to override")
@@ -60,18 +57,15 @@ var listCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		var project string
-		cfg := &config.ServiceConfig{}
-		if err := cfg.ReadFromFile(functionConfiguration); err != nil {
-			project = globalConfiguration.Project()
-		} else {
-			project = cfg.Project
+		serviceCfg, err := config.NewServiceConfigWithFallback(functionConfiguration, nil, globalConfiguration)
+		if err != nil {
+			return err
 		}
 		prefix := ""
 		if len(args) == 1 {
 			prefix = args[0]
 		}
-		services, err := client.ListServices(project, prefix)
+		services, err := client.ListServices(serviceCfg.Project(), prefix)
 		if err != nil {
 			return fmt.Errorf("listing services: %w", err)
 		}
@@ -95,37 +89,33 @@ var listCmd = &cobra.Command{
 }
 
 var (
-	serviceLogsFollow bool
-	serviceLogsTail   bool
-	serviceLogsLines  int
+	serviceLogsFollow  bool
+	serviceLogsTail    bool
+	serviceLogsLines   int
+	serviceLogsService string
 )
 
 var serviceLogsCmd = &cobra.Command{
-	Use:   "logs [service]",
+	Use:   "logs [--service service]",
 	Short: "Show the logs of the latest deployment",
-	Args:  cobra.MaximumNArgs(1),
+	Args:  cobra.NoArgs,
 	Run: runAndHandle(func(cmd *cobra.Command, args []string) error {
 		client, err := globalConfiguration.APIClient()
 		if err != nil {
 			return err
 		}
-		cfg := &config.ServiceConfig{}
-		if err := cfg.ReadFromFile(functionConfiguration); errors.Is(err, os.ErrNotExist) {
-			cfg.Project = globalConfiguration.Project()
-		} else if err != nil {
+		cfg, err := config.NewServiceConfigWithFallback(functionConfiguration, &serviceLogsService, globalConfiguration)
+		if err != nil {
 			return err
 		}
-		if len(args) == 1 {
-			cfg.Service = args[0]
-		}
-		return client.StreamServiceLogs(cfg.Project, cfg.Service, os.Stdout, serviceLogsFollow, serviceLogsTail, serviceLogsLines)
+		return client.StreamServiceLogs(cfg.Project(), cfg.Service(), os.Stdout, serviceLogsFollow, serviceLogsTail, serviceLogsLines)
 	}),
 }
 
 var pushNoDeploy bool
 
 var pushCmd = &cobra.Command{
-	Use:   "push [folder]",
+	Use:   "push folder",
 	Short: "Push a new version to Valar",
 	Args:  cobra.MaximumNArgs(1),
 	Run: runAndHandle(func(cmd *cobra.Command, args []string) error {
@@ -133,8 +123,8 @@ var pushCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		cfg := &config.ServiceConfig{}
-		if err := cfg.ReadFromFile(functionConfiguration); err != nil {
+		serviceCfg, err := config.NewServiceConfigWithFallback(functionConfiguration, nil, globalConfiguration)
+		if err != nil {
 			return err
 		}
 		folder, err := os.Getwd()
@@ -145,7 +135,7 @@ var pushCmd = &cobra.Command{
 			folder = args[0]
 		}
 		// Upload archive artifact
-		archivePath, err := util.CompressDir(folder, cfg.Build.Ignore)
+		archivePath, err := util.CompressDir(folder, serviceCfg.Build().Ignore)
 		if err != nil {
 			return fmt.Errorf("package compression failed: %w", err)
 		}
@@ -155,22 +145,22 @@ var pushCmd = &cobra.Command{
 			return fmt.Errorf("package archive failed: %w", err)
 		}
 		defer targzFile.Close()
-		artifact, err := client.SubmitArtifact(cfg.Project, cfg.Service, targzFile)
+		artifact, err := client.SubmitArtifact(serviceCfg.Project(), serviceCfg.Service(), targzFile)
 		if err != nil {
 			return err
 		}
 		// Submit build request
 		var buildReq api.BuildRequest
 		buildReq.Artifact = artifact.Artifact
-		buildReq.Build.Constructor = cfg.Build.Constructor
-		for _, kv := range cfg.Build.Environment {
+		buildReq.Build.Constructor = serviceCfg.Build().Constructor
+		for _, kv := range serviceCfg.Build().Environment {
 			buildReq.Build.Environment = append(buildReq.Build.Environment, api.KVPair(kv))
 		}
 		buildReq.Deployment.Skip = pushNoDeploy
-		for _, kv := range cfg.Deployment.Environment {
+		for _, kv := range serviceCfg.Deployment().Environment {
 			buildReq.Deployment.Environment = append(buildReq.Deployment.Environment, api.KVPair(kv))
 		}
-		build, err := client.SubmitBuild(cfg.Project, cfg.Service, &buildReq)
+		build, err := client.SubmitBuild(serviceCfg.Project(), serviceCfg.Service(), &buildReq)
 		if err != nil {
 			return err
 		}
@@ -181,14 +171,15 @@ var pushCmd = &cobra.Command{
 
 func initServicesCmd() {
 	initPf := initCmd.PersistentFlags()
-	initPf.StringArrayVarP(&initIgnore, "ignore", "i", []string{".valar.yml", ".git", "node_modules"}, "ignore files on push")
-	initPf.StringVarP(&initConstructor, "type", "t", "", "build constructor type")
-	initPf.StringVarP(&initProject, "project", "p", "", "project to deploy service to, defaults to project set in global config")
-	initPf.BoolVarP(&initForce, "force", "f", false, "allow configuration override")
+	initPf.StringArrayVarP(&initIgnore, "ignore", "i", []string{".valar.yml", ".git", "node_modules"}, "Ignore files on push")
+	initPf.StringVarP(&initConstructor, "type", "t", "", "Build constructor type")
+	initPf.StringVarP(&initProject, "project", "p", "", "Project to deploy service to, defaults to project set in global config")
+	initPf.BoolVarP(&initForce, "force", "f", false, "Allow configuration override")
 	cobra.MarkFlagRequired(initPf, "type")
-	serviceLogsCmd.PersistentFlags().BoolVarP(&serviceLogsFollow, "follow", "f", false, "follow logs")
-	serviceLogsCmd.PersistentFlags().BoolVarP(&serviceLogsTail, "tail", "t", false, "jump to end of logs")
-	serviceLogsCmd.PersistentFlags().IntVarP(&serviceLogsLines, "skip", "n", 0, "lines to skip/rewind when reading logs")
+	serviceLogsCmd.Flags().BoolVarP(&serviceLogsFollow, "follow", "f", false, "Follow logs")
+	serviceLogsCmd.Flags().BoolVarP(&serviceLogsTail, "tail", "t", false, "Jump to end of logs")
+	serviceLogsCmd.Flags().IntVarP(&serviceLogsLines, "skip", "n", 0, "Lines to skip/rewind when reading logs")
+	serviceLogsCmd.Flags().StringVarP(&serviceLogsService, "service", "s", "", "The service to target")
 	rootCmd.AddCommand(listCmd)
 	rootCmd.AddCommand(serviceLogsCmd)
 	rootCmd.AddCommand(initCmd)

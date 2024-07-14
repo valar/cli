@@ -1,17 +1,14 @@
 package cmd
 
 import (
-	"errors"
 	"fmt"
 	"os"
 	"strings"
 	"text/tabwriter"
 
-	"github.com/valar/cli/config"
-
-	"github.com/valar/cli/api"
-
 	"github.com/spf13/cobra"
+	"github.com/valar/cli/api"
+	"github.com/valar/cli/config"
 )
 
 var (
@@ -24,13 +21,11 @@ var (
 			if err != nil {
 				return err
 			}
-			cfg := &config.ServiceConfig{}
-			if err := cfg.ReadFromFile(functionConfiguration); errors.Is(err, os.ErrNotExist) {
-				cfg.Project = globalConfiguration.Project()
-			} else if err != nil {
+			cfg, err := config.NewServiceConfigWithFallback(functionConfiguration, nil, globalConfiguration)
+			if err != nil {
 				return err
 			}
-			namespace, prefix := "service", cfg.Project
+			namespace, prefix := "service", cfg.Project()
 			if len(args) == 1 {
 				subargs := strings.SplitN(args[0], ":", 2)
 				if len(subargs) != 2 {
@@ -38,7 +33,7 @@ var (
 				}
 				namespace, prefix = subargs[0], subargs[1]
 			}
-			permissions, err := client.ListPermissions(cfg.Project, namespace, prefix)
+			permissions, err := client.ListPermissions(cfg.Project(), namespace, prefix)
 			if err != nil {
 				return err
 			}
@@ -79,10 +74,8 @@ var (
 			if err != nil {
 				return err
 			}
-			cfg := &config.ServiceConfig{}
-			if err := cfg.ReadFromFile(functionConfiguration); errors.Is(err, os.ErrNotExist) {
-				cfg.Project = globalConfiguration.Project()
-			} else if err != nil {
+			cfg, err := config.NewServiceConfigWithFallback(functionConfiguration, nil, globalConfiguration)
+			if err != nil {
 				return err
 			}
 			path, err := api.PermissionPathFromString(args[0])
@@ -98,7 +91,7 @@ var (
 				User:   user,
 				Action: args[2],
 			}
-			allowed, err := client.CheckPermission(cfg.Project, permission)
+			allowed, err := client.CheckPermission(cfg.Project(), permission)
 			if err != nil {
 				return err
 			}
@@ -123,10 +116,8 @@ func authModifyWithState(state string) func(cmd *cobra.Command, args []string) e
 		if err != nil {
 			return err
 		}
-		cfg := &config.ServiceConfig{}
-		if err := cfg.ReadFromFile(functionConfiguration); errors.Is(err, os.ErrNotExist) {
-			cfg.Project = globalConfiguration.Project()
-		} else if err != nil {
+		cfg, err := config.NewServiceConfigWithFallback(functionConfiguration, nil, globalConfiguration)
+		if err != nil {
 			return err
 		}
 		path, err := api.PermissionPathFromString(args[0])
@@ -143,7 +134,7 @@ func authModifyWithState(state string) func(cmd *cobra.Command, args []string) e
 			Action: args[2],
 			State:  state,
 		}
-		modified, err := client.ModifyPermission(cfg.Project, permission)
+		modified, err := client.ModifyPermission(cfg.Project(), permission)
 		if err != nil {
 			return err
 		}

@@ -357,15 +357,22 @@ func (client *Client) DeleteDomain(project, domain string) error {
 	return nil
 }
 
-func (client *Client) LinkDomain(project, domain, service string, allowInsecureTraffic bool) error {
+type LinkDomainArgs struct {
+	Project              string
+	Domain               string
+	Service              string
+	AllowInsecureTraffic bool
+}
+
+func (client *Client) LinkDomain(args LinkDomainArgs) error {
 	var (
-		path       = fmt.Sprintf("/projects/%s/domains/%s/link", project, domain)
+		path       = fmt.Sprintf("/projects/%s/domains/%s/link", args.Project, args.Domain)
 		payload, _ = json.Marshal(struct {
 			Service              string `json:"service"`
 			AllowInsecureTraffic bool   `json:"allowInsecureTraffic"`
 		}{
-			Service:              service,
-			AllowInsecureTraffic: allowInsecureTraffic,
+			Service:              args.Service,
+			AllowInsecureTraffic: args.AllowInsecureTraffic,
 		})
 	)
 	if err := client.request(http.MethodPost, path, nil, bytes.NewReader(payload)); err != nil {
@@ -374,12 +381,20 @@ func (client *Client) LinkDomain(project, domain, service string, allowInsecureT
 	return nil
 }
 
-func (client *Client) UnlinkDomain(project, domain, service string) error {
+type UnlinkDomainArgs struct {
+	Project string
+	Domain  string
+	Service string
+}
+
+func (client *Client) UnlinkDomain(args UnlinkDomainArgs) error {
 	var (
-		path       = fmt.Sprintf("/projects/%s/domains/%s/link", project, domain)
+		path       = fmt.Sprintf("/projects/%s/domains/%s/link", args.Project, args.Domain)
 		payload, _ = json.Marshal(struct {
 			Service string `json:"service"`
-		}{service})
+		}{
+			Service: args.Service,
+		})
 	)
 	if err := client.request(http.MethodDelete, path, nil, bytes.NewReader(payload)); err != nil {
 		return err
