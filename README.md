@@ -218,13 +218,13 @@ valar domains delete [domain]
 #### Listing all builds
 
 ```bash
-valar builds
+valar builds list [prefix]
 ```
 
 #### Listing all builds with the given prefix
 
 ```bash
-valar builds [prefix]
+valar builds list [prefix]
 ```
 
 #### Inspecting a build
@@ -289,7 +289,7 @@ valar auth check [path] [user] [read | write | invoke | manage]
 #### View the scheduled invokes
 
 ```bash
-valar cron 
+valar cron list
 ```
 
 #### Schedule a service invocation
