@@ -12,11 +12,11 @@ import (
 	"time"
 )
 
-type Error struct {
+type JSONError struct {
 	Err string `json:"error"`
 }
 
-func (err Error) Error() string {
+func (err JSONError) Error() string {
 	return err.Err
 }
 
@@ -48,12 +48,21 @@ func (client *Client) check() error {
 	return nil
 }
 
+type Error struct {
+	StatusCode  int
+	ServerError error
+}
+
+func (err Error) Error() string {
+	return fmt.Sprintf("%s: %v", http.StatusText(err.StatusCode), err.ServerError)
+}
+
 func parseErrorResponse(body []byte) error {
-	serverErr := Error{}
+	serverErr := JSONError{}
 	if err := json.Unmarshal(body, &serverErr); err != nil {
 		return fmt.Errorf("unmarshalling error response: %w", err)
 	}
-	return fmt.Errorf("server: %w", serverErr)
+	return serverErr
 }
 
 func (client *Client) streamRequest(method, path string, w io.Writer) error {
@@ -74,7 +83,10 @@ func (client *Client) streamRequest(method, path string, w io.Writer) error {
 		if err != nil {
 			return fmt.Errorf("fetching response: %w", err)
 		}
-		return parseErrorResponse(body)
+		return Error{
+			StatusCode:  resp.StatusCode,
+			ServerError: parseErrorResponse(body),
+		}
 	}
 	if _, err := io.Copy(w, resp.Body); err != nil && err != io.EOF {
 		return fmt.Errorf("copying request: %w", err)
@@ -99,7 +111,10 @@ func (client *Client) request(method, path string, obj interface{}, post io.Read
 		return fmt.Errorf("fetching request: %w", err)
 	}
 	if resp.StatusCode != http.StatusOK {
-		return parseErrorResponse(body)
+		return Error{
+			StatusCode:  resp.StatusCode,
+			ServerError: parseErrorResponse(body),
+		}
 	}
 	if obj != nil {
 		if err := json.Unmarshal(body, obj); err != nil {
@@ -424,7 +439,7 @@ func (client *Client) ListSchedules(project, service string) ([]Schedule, error)
 	return schedules, nil
 }
 
-func (client *Client) AddSchedule(project, service string, sched Schedule) error {
+func (client *Client) SetSchedule(project, service string, sched Schedule) error {
 	var (
 		path       = fmt.Sprintf("/projects/%s/services/%s/schedules", project, service)
 		payload, _ = json.Marshal(sched)
@@ -432,7 +447,7 @@ func (client *Client) AddSchedule(project, service string, sched Schedule) error
 	return client.request(http.MethodPost, path, nil, bytes.NewReader(payload))
 }
 
-func (client *Client) RemoveSchedule(project, service, schedule string) error {
+func (client *Client) DeleteSchedule(project, service, schedule string) error {
 	var (
 		path = fmt.Sprintf("/projects/%s/services/%s/schedules/%s", project, service, schedule)
 	)
@@ -446,15 +461,15 @@ func (client *Client) TriggerSchedule(project, service, schedule string) error {
 	return client.request(http.MethodPost, path, nil, nil)
 }
 
-func (client *Client) InspectSchedule(project, service, schedule string) ([]ServiceInvocation, error) {
+func (client *Client) InspectSchedule(project, service, schedule string) (*ScheduleDetails, error) {
 	var (
-		path        = fmt.Sprintf("/projects/%s/services/%s/schedules/%s", project, service, schedule)
-		invocations []ServiceInvocation
+		path    = fmt.Sprintf("/projects/%s/services/%s/schedules/%s", project, service, schedule)
+		details ScheduleDetails
 	)
-	if err := client.request(http.MethodGet, path, &invocations, nil); err != nil {
+	if err := client.request(http.MethodGet, path, &details, nil); err != nil {
 		return nil, err
 	}
-	return invocations, nil
+	return &details, nil
 }
 
 type Schedule struct {
@@ -462,13 +477,20 @@ type Schedule struct {
 	Timespec string `json:"timespec"`
 	Path     string `json:"path"`
 	Payload  string `json:"payload"`
+	Status   string `json:"status"`
 }
+
+type ScheduleDetails struct {
+	LastRun  *ServiceInvocation `json:"invocation"`
+	Schedule *Schedule          `json:"schedule"`
+}
+
 type ServiceInvocation struct {
 	ID            string    `json:"id"`
 	StartTime     time.Time `json:"startTime"`
 	EndTime       time.Time `json:"endTime,omitempty"`
 	Status        string    `json:"status"`
-	TriggerSource string    `json:"triggered_by"`
+	TriggerSource string    `json:"triggeredBy"`
 }
 type Domain struct {
 	Project    string    `json:"project"`

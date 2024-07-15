@@ -215,9 +215,9 @@ func colorize(status string) string {
 		return color.HiYellowString("%s", status)
 	case "building", "releasing", "binding", "running":
 		return color.YellowString("%s", status)
-	case "done", "succeeded":
+	case "done", "succeeded", "enabled":
 		return color.GreenString("%s", status)
-	case "failed":
+	case "failed", "disabled":
 		return color.RedString("%s", status)
 	default:
 		return status
