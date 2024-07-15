@@ -17,7 +17,7 @@ var configCmd = &cobra.Command{
 
 var configViewCmd = &cobra.Command{
 	Use:   "view",
-	Short: "View the merged configuration as YAML",
+	Short: "View the merged configuration as YAML.",
 	Run: func(cmd *cobra.Command, args []string) {
 		enc := yaml.NewEncoder(os.Stdout)
 		enc.SetIndent(2)
@@ -27,7 +27,7 @@ var configViewCmd = &cobra.Command{
 
 var configEndpointCmd = &cobra.Command{
 	Use:   "endpoint",
-	Short: "Manage API endpoints",
+	Short: "Manage API endpoints.",
 	Args:  cobra.NoArgs,
 	Run: func(cmd *cobra.Command, args []string) {
 		tw := ansiterm.NewTabWriter(os.Stdout, 6, 0, 1, ' ', 0)
@@ -43,7 +43,7 @@ var configEndpointSetUrl, configEndpointSetToken string
 
 var configEndpointSetCmd = &cobra.Command{
 	Use:   "set [endpoint]",
-	Short: "Configure an API endpoint",
+	Short: "Configure an API endpoint.",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ep := globalConfiguration.Endpoints[args[0]]
@@ -66,7 +66,7 @@ var configEndpointSetCmd = &cobra.Command{
 
 var configEndpointRemoveCmd = &cobra.Command{
 	Use:   "remove [endpoint]",
-	Short: "Drop an API endpoint from the configuration",
+	Short: "Drop an API endpoint from the configuration.",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		delete(globalConfiguration.Endpoints, args[0])
@@ -79,7 +79,7 @@ var configEndpointRemoveCmd = &cobra.Command{
 
 var configContextCmd = &cobra.Command{
 	Use:   "context",
-	Short: "Manage CLI contexts",
+	Short: "Manage CLI contexts.",
 	Args:  cobra.NoArgs,
 	Run: func(cmd *cobra.Command, args []string) {
 		tw := ansiterm.NewTabWriter(os.Stdout, 6, 0, 1, ' ', 0)
@@ -97,7 +97,7 @@ var configContextCmd = &cobra.Command{
 
 var configContextUseCmd = &cobra.Command{
 	Use:   "use [context]",
-	Short: "Change the active context",
+	Short: "Change the active context.",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		globalConfiguration.ActiveContext = args[0]
@@ -112,7 +112,7 @@ var configContextSetEndpoint, configContextSetProject string
 
 var configContextSetCmd = &cobra.Command{
 	Use:   "set [context]",
-	Short: "Configure a CLI context",
+	Short: "Configure a CLI context.",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		ctx := globalConfiguration.Contexts[args[0]]
@@ -132,7 +132,7 @@ var configContextSetCmd = &cobra.Command{
 
 var configContextRemoveCmd = &cobra.Command{
 	Use:   "remove [context]",
-	Short: "Drop a context from the configuration",
+	Short: "Drop a context from the configuration.",
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		delete(globalConfiguration.Contexts, args[0])

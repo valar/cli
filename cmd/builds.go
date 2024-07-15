@@ -19,13 +19,13 @@ var buildService string
 
 var buildCmd = &cobra.Command{
 	Use:     "build [--service service]",
-	Short:   "Manage the builds of a service",
+	Short:   "Manage the builds of a service.",
 	Aliases: []string{"builds", "b"},
 }
 
 var buildListCmd = &cobra.Command{
 	Use:   "list [prefix]",
-	Short: "List builds of the service",
+	Short: "List builds of the service.",
 	Args:  cobra.MaximumNArgs(1),
 	Run: runAndHandle(func(cmd *cobra.Command, args []string) error {
 		cfg, err := config.NewServiceConfigWithFallback(functionConfiguration, &buildService, globalConfiguration)
@@ -45,7 +45,7 @@ var buildListCmd = &cobra.Command{
 
 var buildAbortCmd = &cobra.Command{
 	Use:   "abort [prefix]",
-	Short: "Abort a scheduled or running build",
+	Short: "Abort a scheduled or running build.",
 	Args:  cobra.MaximumNArgs(1),
 	Run: runAndHandle(func(cmd *cobra.Command, args []string) error {
 		cfg, err := config.NewServiceConfigWithFallback(functionConfiguration, &buildService, globalConfiguration)
@@ -67,7 +67,7 @@ var logsFollow = false
 
 var buildLogsCmd = &cobra.Command{
 	Use:   "logs [buildid]",
-	Short: "Show the build logs of the given task",
+	Short: "Show the build logs of the given task.",
 	Args:  cobra.MaximumNArgs(1),
 	Run: runAndHandle(func(cmd *cobra.Command, args []string) error {
 		cfg, err := config.NewServiceConfigWithFallback(functionConfiguration, &buildService, globalConfiguration)
@@ -102,7 +102,7 @@ var buildLogsCmd = &cobra.Command{
 
 var buildInspectCmd = &cobra.Command{
 	Use:   "inspect [prefix]",
-	Short: "Inspect the first matched task with the given ID prefix",
+	Short: "Inspect the first matched task with the given ID prefix.",
 	Args:  cobra.ExactArgs(1),
 	Run: runAndHandle(func(cmd *cobra.Command, args []string) error {
 		cfg, err := config.NewServiceConfigWithFallback(functionConfiguration, &buildService, globalConfiguration)
@@ -119,7 +119,7 @@ var buildInspectCmd = &cobra.Command{
 
 var buildStatusCmd = &cobra.Command{
 	Use:   "status [buildid]",
-	Short: "Show the status of the given build",
+	Short: "Show the status of the given build.",
 	Args:  cobra.ExactArgs(1),
 	Run: runAndHandle(func(cmd *cobra.Command, args []string) error {
 		cfg, err := config.NewServiceConfigWithFallback(functionConfiguration, &buildService, globalConfiguration)

@@ -12,7 +12,7 @@ var version string
 
 var rootCmd = &cobra.Command{
 	Use:   "valar",
-	Short: "Valar is a next-generation serverless platform",
+	Short: "Valar is a next-generation serverless platform.",
 	Long: `Valar is a next-generation serverless platform.
 
 You code. We do the rest.

@@ -14,7 +14,7 @@ import (
 var (
 	authListCmd = &cobra.Command{
 		Use:   "list [path]",
-		Short: "List permissions for a path prefix",
+		Short: "List permissions for a path prefix.",
 		Args:  cobra.MaximumNArgs(1),
 		Run: runAndHandle(func(cmd *cobra.Command, args []string) error {
 			client, err := globalConfiguration.APIClient()
@@ -49,25 +49,25 @@ var (
 
 	authAllowCmd = &cobra.Command{
 		Use:   "allow path user action",
-		Short: "Modify permissions for a path and user",
+		Short: "Modify permissions for a path and user.",
 		Args:  cobra.ExactArgs(3),
 		Run:   runAndHandle(authModifyWithState("allow")),
 	}
 	authForbidCmd = &cobra.Command{
 		Use:   "forbid path user action",
-		Short: "Forbid a specific action for a path and user",
+		Short: "Forbid a specific action for a path and user.",
 		Args:  cobra.ExactArgs(3),
 		Run:   runAndHandle(authModifyWithState("forbid")),
 	}
 	authClearCmd = &cobra.Command{
 		Use:   "clear path user action",
-		Short: "Remove the permission for a path and user",
+		Short: "Remove the permission for a path and user.",
 		Args:  cobra.ExactArgs(3),
 		Run:   runAndHandle(authModifyWithState("unset")),
 	}
 	authCheckCmd = &cobra.Command{
 		Use:   "check path user action",
-		Short: "Check if a user can perform an action",
+		Short: "Check if a user can perform an action.",
 		Args:  cobra.ExactArgs(3),
 		Run: runAndHandle(func(cmd *cobra.Command, args []string) error {
 			client, err := globalConfiguration.APIClient()
@@ -106,7 +106,7 @@ var (
 
 	authCmd = &cobra.Command{
 		Use:   "auth",
-		Short: "Manage user and service permissions",
+		Short: "Manage user and service permissions.",
 	}
 )
 

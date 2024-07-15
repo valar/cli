@@ -18,13 +18,13 @@ var deploymentService string
 
 var deploymentCmd = &cobra.Command{
 	Use:     "deployment",
-	Short:   "Manage the deployments of a service",
+	Short:   "Manage the deployments of a service.",
 	Aliases: []string{"deploys", "deploy", "d"},
 }
 
 var deploymentListCmd = &cobra.Command{
 	Use:     "list",
-	Short:   "List deployments of the service",
+	Short:   "List deployments of the service.",
 	Aliases: []string{"l"},
 	Args:    cobra.NoArgs,
 	Run: runAndHandle(func(cmd *cobra.Command, args []string) error {
@@ -42,7 +42,7 @@ var deploymentListCmd = &cobra.Command{
 
 var deploymentCreateCmd = &cobra.Command{
 	Use:   "create [build]",
-	Short: "Deploy the build with the fully given ID",
+	Short: "Deploy the build with the fully given ID.",
 	Args:  cobra.ExactArgs(1),
 	Run: runAndHandle(func(cmd *cobra.Command, args []string) error {
 		cfg, err := config.NewServiceConfigWithFallback(functionConfiguration, &deploymentService, globalConfiguration)
@@ -61,7 +61,7 @@ var rollbackDelta int
 
 var deploymentRollbackCmd = &cobra.Command{
 	Use:   "rollback",
-	Short: "Reverse service to the previous deployment",
+	Short: "Reverse service to the previous deployment.",
 	Args:  cobra.NoArgs,
 	Run: runAndHandle(func(cmd *cobra.Command, args []string) error {
 		cfg, err := config.NewServiceConfigWithFallback(functionConfiguration, &deploymentService, globalConfiguration)

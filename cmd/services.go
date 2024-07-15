@@ -23,7 +23,7 @@ var initForce bool
 
 var initCmd = &cobra.Command{
 	Use:   "init service",
-	Short: "Configure a new service",
+	Short: "Configure a new service.",
 	Args:  cobra.ExactArgs(1),
 	Run: runAndHandle(func(cmd *cobra.Command, args []string) error {
 		if initProject == "" {
@@ -50,7 +50,7 @@ var initCmd = &cobra.Command{
 
 var listCmd = &cobra.Command{
 	Use:   "list [prefix]",
-	Short: "Show services in the current project",
+	Short: "Show services in the current project.",
 	Args:  cobra.MaximumNArgs(1),
 	Run: runAndHandle(func(cmd *cobra.Command, args []string) error {
 		client, err := globalConfiguration.APIClient()
@@ -97,7 +97,7 @@ var (
 
 var serviceLogsCmd = &cobra.Command{
 	Use:   "logs [--service service]",
-	Short: "Show the logs of the latest deployment",
+	Short: "Show the logs of the latest deployment.",
 	Args:  cobra.NoArgs,
 	Run: runAndHandle(func(cmd *cobra.Command, args []string) error {
 		client, err := globalConfiguration.APIClient()
@@ -116,7 +116,7 @@ var pushNoDeploy bool
 
 var pushCmd = &cobra.Command{
 	Use:   "push folder",
-	Short: "Push a new version to Valar",
+	Short: "Push a new version to Valar.",
 	Args:  cobra.MaximumNArgs(1),
 	Run: runAndHandle(func(cmd *cobra.Command, args []string) error {
 		client, err := globalConfiguration.APIClient()

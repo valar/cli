@@ -13,7 +13,7 @@ import (
 
 var envCmd = &cobra.Command{
 	Use:   "env",
-	Short: "Manage environment variables",
+	Short: "Manage environment variables.",
 }
 
 var envListCmd = &cobra.Command{
@@ -107,7 +107,7 @@ var envSetCmd = &cobra.Command{
 
 var envDeleteCmd = &cobra.Command{
 	Use:   "delete [variable]",
-	Short: "Delete the environment variable",
+	Short: "Delete the environment variable.",
 	Args:  cobra.ExactArgs(1),
 	Run: runAndHandle(func(cmd *cobra.Command, args []string) error {
 		cfg, err := config.NewServiceConfigWithFallback(functionConfiguration, nil, globalConfiguration)
