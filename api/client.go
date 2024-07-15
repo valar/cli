@@ -60,7 +60,7 @@ func (err Error) Error() string {
 func parseErrorResponse(body []byte) error {
 	serverErr := JSONError{}
 	if err := json.Unmarshal(body, &serverErr); err != nil {
-		return fmt.Errorf("unmarshalling error response: %w", err)
+		return fmt.Errorf("unmarshalling error response '%s': %w", string(body), err)
 	}
 	return serverErr
 }
