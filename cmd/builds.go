@@ -6,13 +6,16 @@ import (
 	"sort"
 	"strings"
 	"text/tabwriter"
+	"time"
 
 	"github.com/dustin/go-humanize"
 	"github.com/fatih/color"
 	"github.com/juju/ansiterm"
+	"github.com/schollz/progressbar/v3"
 	"github.com/spf13/cobra"
 	"github.com/valar/cli/api"
 	"github.com/valar/cli/config"
+	"golang.org/x/crypto/ssh/terminal"
 )
 
 var buildService string
@@ -64,6 +67,29 @@ var buildAbortCmd = &cobra.Command{
 }
 
 var logsFollow = false
+var logsRaw = false
+
+func formatLogEntry(logEntry *api.LogEntry) string {
+	line := &strings.Builder{}
+
+	fmt.Fprintf(line, "│ %s │ ", color.HiBlackString(logEntry.Timestamp.Format(time.RFC3339)))
+
+	switch logEntry.Source {
+	case api.LogEntrySourceUnspecified:
+	case api.LogEntrySourceWrapper:
+		switch logEntry.Stage {
+		case api.LogEntryStageUnspecified:
+			line.WriteString(color.WhiteString("→ %s", logEntry.Content))
+		case api.LogEntryStageSetup:
+			line.WriteString(color.GreenString("setup ↗ %s", logEntry.Content))
+		case api.LogEntryStageTurndown:
+			line.WriteString(color.YellowString("turndown ↘ %s", logEntry.Content))
+		}
+	case api.LogEntrySourceProcess:
+		line.WriteString(color.WhiteString("→ %s", logEntry.Content))
+	}
+	return line.String()
+}
 
 var buildLogsCmd = &cobra.Command{
 	Use:   "logs [buildid]",
@@ -93,10 +119,87 @@ var buildLogsCmd = &cobra.Command{
 		// Sort builds by date
 		sort.Slice(builds, func(i, j int) bool { return builds[i].CreatedAt.After(builds[j].CreatedAt) })
 		latestBuildID := builds[0].ID
-		if logsFollow {
-			return client.StreamBuildLogs(cfg.Project(), cfg.Service(), latestBuildID, os.Stdout)
+		consumer := func(le api.LogEntry) {
+			if logsRaw {
+				fmt.Println(le.Content)
+			} else {
+				fmt.Println(formatLogEntry(&le))
+			}
 		}
-		return client.ShowBuildLogs(cfg.Project(), cfg.Service(), latestBuildID, os.Stdout)
+		if logsFollow {
+			return client.StreamBuildLogs(cfg.Project(), cfg.Service(), latestBuildID, consumer)
+		}
+		return client.ShowBuildLogs(cfg.Project(), cfg.Service(), latestBuildID, consumer)
+	}),
+}
+
+var buildWatchCmd = &cobra.Command{
+	Use:   "watch [prefix]",
+	Short: "Watch a live build until its completion.",
+	Args:  cobra.MaximumNArgs(1),
+	Run: runAndHandle(func(cmd *cobra.Command, args []string) error {
+		cfg, err := config.NewServiceConfigWithFallback(functionConfiguration, &buildService, globalConfiguration)
+		if err != nil {
+			return err
+		}
+		client, err := globalConfiguration.APIClient()
+		if err != nil {
+			return err
+		}
+		// Get latest matching build
+		prefix := ""
+		if len(args) > 0 {
+			prefix = args[0]
+		}
+		builds, err := client.ListBuilds(cfg.Project(), cfg.Service(), prefix)
+		if err != nil {
+			return err
+		}
+		if len(builds) == 0 {
+			return fmt.Errorf("no builds available")
+		}
+		// Sort builds by date
+		sort.Slice(builds, func(i, j int) bool { return builds[i].CreatedAt.After(builds[j].CreatedAt) })
+		latestBuildID := builds[0].ID
+
+		_, rows, _ := terminal.GetSize(0)
+		bar := progressbar.NewOptions(-1, progressbar.OptionEnableColorCodes(true), progressbar.OptionSpinnerType(3), progressbar.OptionSetElapsedTime(false), progressbar.OptionSetMaxDetailRow(rows-2))
+		build, err := client.InspectBuild(cfg.Project(), cfg.Service(), latestBuildID)
+		if err != nil {
+			return err
+		}
+
+		switch build.Status {
+		case "scheduled":
+			bar.Describe("Scheduling build onto worker ...")
+		}
+
+		client.StreamBuildLogs(cfg.Project(), cfg.Service(), latestBuildID, func(le api.LogEntry) {
+			switch le.Stage {
+			case api.LogEntryStageUnspecified:
+				bar.Describe("Processing ...")
+			case api.LogEntryStageSetup:
+				bar.Describe("Setting up build environment ...")
+			case api.LogEntryStageTurndown:
+				bar.Describe("Turning down build environment ...")
+			}
+			bar.AddDetail(formatLogEntry(&le))
+		})
+
+		build, err = client.InspectBuild(cfg.Project(), cfg.Service(), latestBuildID)
+		if err != nil {
+			return err
+		}
+		switch build.Status {
+		case "done":
+			bar.Describe("Build has succeeded.")
+		case "failed":
+			bar.Describe("Build has failed.")
+		}
+		bar.Finish()
+		fmt.Println()
+
+		return nil
 	}),
 }
 
@@ -227,6 +330,7 @@ func colorize(status string) string {
 func initBuildsCmd() {
 	buildCmd.PersistentFlags().StringVarP(&buildService, "service", "s", "", "The service to inspect for builds")
 	buildLogsCmd.PersistentFlags().BoolVarP(&logsFollow, "follow", "f", false, "Follow the logs")
-	buildCmd.AddCommand(buildListCmd, buildInspectCmd, buildLogsCmd, buildAbortCmd, buildStatusCmd)
+	buildLogsCmd.PersistentFlags().BoolVarP(&logsRaw, "raw", "r", false, "Dump the unformatted log content")
+	buildCmd.AddCommand(buildListCmd, buildInspectCmd, buildLogsCmd, buildAbortCmd, buildStatusCmd, buildWatchCmd)
 	rootCmd.AddCommand(buildCmd)
 }

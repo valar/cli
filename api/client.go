@@ -1,6 +1,7 @@
 package api
 
 import (
+	"bufio"
 	"bytes"
 	"encoding/json"
 	"fmt"
@@ -194,25 +195,96 @@ func (client *Client) AbortBuild(project, service, id string) error {
 	return nil
 }
 
+type LogEntry struct {
+	Timestamp time.Time      `json:"timestamp"`
+	Source    LogEntrySource `json:"source"`
+	Stage     LogEntryStage  `json:"stage"`
+	Content   string         `json:"content"`
+}
+
+type LogEntrySource string
+
+const (
+	LogEntrySourceUnspecified = ""
+	LogEntrySourceProcess     = "PROCESS"
+	LogEntrySourceWrapper     = "WRAPPER"
+)
+
+type LogEntryStage string
+
+const (
+	LogEntryStageUnspecified = ""
+	LogEntryStageSetup       = "SETUP"
+	LogEntryStageTurndown    = "TURNDOWN"
+)
+
+type logEntryDecoder struct {
+	consumer func(LogEntry)
+	writer   *io.PipeWriter
+	done     chan struct{}
+}
+
+func newLogEntryDecoder(consumer func(LogEntry)) *logEntryDecoder {
+	done := make(chan struct{}, 1)
+	reader, writer := io.Pipe()
+	go func() {
+		scanner := bufio.NewScanner(reader)
+		for scanner.Scan() {
+			logentry := LogEntry{}
+			logline := scanner.Text()
+			if err := json.Unmarshal([]byte(logline), &logentry); err != nil {
+				consumer(LogEntry{Content: logline})
+				continue
+			}
+			consumer(logentry)
+		}
+		close(done)
+	}()
+
+	return &logEntryDecoder{consumer, writer, done}
+}
+
+func (decoder *logEntryDecoder) Write(b []byte) (int, error) {
+	return decoder.writer.Write(b)
+}
+
+func (decoder *logEntryDecoder) Close() error {
+	return decoder.writer.Close()
+}
+
+func (decoder *logEntryDecoder) Wait() {
+	<-decoder.done
+}
+
 // ShowBuildLogs retrieves a specific build task logs.
-func (client *Client) ShowBuildLogs(project, service, id string, w io.Writer) error {
+func (client *Client) ShowBuildLogs(project, service, id string, consumer func(LogEntry)) error {
 	var (
 		path = fmt.Sprintf("/projects/%s/services/%s/builds/%s/logs", project, service, id)
 	)
-	if err := client.streamRequest(http.MethodGet, path, w); err != nil {
+	decoder := newLogEntryDecoder(consumer)
+	if err := client.streamRequest(http.MethodGet, path, decoder); err != nil {
 		return err
 	}
+	if err := decoder.Close(); err != nil {
+		return err
+	}
+	decoder.Wait()
 	return nil
 }
 
 // StreamBuildLogs streams the active build logs to stdout.
-func (client *Client) StreamBuildLogs(project, service, id string, w io.Writer) error {
+func (client *Client) StreamBuildLogs(project, service, id string, consumer func(LogEntry)) error {
 	var (
 		path = fmt.Sprintf("/projects/%s/services/%s/builds/%s/logs?follow=true", project, service, id)
 	)
-	if err := client.streamRequest(http.MethodGet, path, w); err != nil {
+	decoder := newLogEntryDecoder(consumer)
+	if err := client.streamRequest(http.MethodGet, path, decoder); err != nil {
 		return err
 	}
+	if err := decoder.Close(); err != nil {
+		return err
+	}
+	decoder.Wait()
 	return nil
 }
 

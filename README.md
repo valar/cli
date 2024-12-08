@@ -242,7 +242,12 @@ valar builds abort [prefix]
 #### Show logs from build
 
 ```bash
-valar builds logs [--follow] [optional buildid]
+valar builds logs [--follow] [--raw] [optional buildid]
+```
+
+#### Watch the build and status until its completed
+```bash
+valar builds watch [optional buildid]
 ```
 
 #### Show build status
