@@ -146,11 +146,11 @@ jobs:
         env:
           SSH_AUTH_SOCK: /tmp/ssh_agent.sock
         run: |
-          brew tap valar/tap git@github.com:valar/homebrew-tap.git
-          cd $(brew --repo valar/tap)
-          brew bump-formula-pr --write-only \
-            --url=https://github.com/valar/cli/archive/refs/tags/${{ steps.get_version.outputs.version }}.tar.gz \
-            valar/tap/valar
+          git clone git@github.com:valar/homebrew-tap.git ~/valar-tap && cd ~/valar-tap
+          NEW_URL="https://github.com/valar/cli/archive/refs/tags/${{ steps.get_version.outputs.version }}.tar.gz"
+          NEW_SHA256="$(curl -sSL $NEW_URL | sha256sum -)"
+          awk -v new_url="$NEW_URL" '{gsub(/url ".*"/, "url \""new_url"\"")} 1' Formula/valar.rb > Formula/valar.rb
+          awk -v new_sha256="$NEW_SHA256" '{gsub(/sha256 ".*"/, "sha256 \""new_sha256"\"")} 1' Formula/valar.rb > Formula/valar.rb
           git commit -a -m "Bump version to ${{ steps.get_version.outputs.version }}"
           git push -u
     
