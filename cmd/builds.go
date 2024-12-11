@@ -69,24 +69,44 @@ var buildAbortCmd = &cobra.Command{
 var logsFollow = false
 var logsRaw = false
 
-func formatLogEntry(logEntry *api.LogEntry) string {
+func formatLogEntry(logEntry *api.LogEntry, terminalWidth int) string {
 	line := &strings.Builder{}
 
-	fmt.Fprintf(line, "│ %s │ ", color.HiBlackString(logEntry.Timestamp.Format(time.RFC3339)))
-
+	timestampPrefix := []rune(fmt.Sprintf("│ %s │ ", logEntry.Timestamp.Format(time.RFC3339)))
+	colorWrapper := color.WhiteString
+	contextPrefix := []rune{}
 	switch logEntry.Source {
 	case api.LogEntrySourceUnspecified:
 	case api.LogEntrySourceWrapper:
 		switch logEntry.Stage {
 		case api.LogEntryStageUnspecified:
-			line.WriteString(color.WhiteString("→ %s", logEntry.Content))
+			colorWrapper = color.WhiteString
+			contextPrefix = []rune("→ ")
 		case api.LogEntryStageSetup:
-			line.WriteString(color.GreenString("setup ↗ %s", logEntry.Content))
+			colorWrapper = color.GreenString
+			contextPrefix = []rune("setup ↗ ")
 		case api.LogEntryStageTurndown:
-			line.WriteString(color.YellowString("turndown ↘ %s", logEntry.Content))
+			colorWrapper = color.YellowString
+			contextPrefix = []rune("turndown ↘ ")
 		}
 	case api.LogEntrySourceProcess:
-		line.WriteString(color.WhiteString("→ %s", logEntry.Content))
+		colorWrapper = color.WhiteString
+		contextPrefix = []rune("")
+	}
+
+	line.WriteString(color.HiBlackString(string(timestampPrefix)))
+	line.WriteString(colorWrapper(string(contextPrefix)))
+
+	contentRunes := []rune(logEntry.Content)
+	runeBlockLen := max(1, terminalWidth-len(timestampPrefix)-len(contextPrefix))
+	for i := 0; i <= len(contentRunes)/runeBlockLen; i++ {
+		if i != 0 {
+			line.WriteString(color.HiBlackString(string(timestampPrefix)))
+			for j := 0; j < len(contextPrefix); j++ {
+				line.WriteRune(' ')
+			}
+		}
+		line.WriteString(colorWrapper(string(contentRunes[i*runeBlockLen : min((i+1)*runeBlockLen, len(contentRunes))])))
 	}
 	return line.String()
 }
@@ -117,13 +137,14 @@ var buildLogsCmd = &cobra.Command{
 			return fmt.Errorf("no builds available")
 		}
 		// Sort builds by date
+		width, _, _ := terminal.GetSize(0)
 		sort.Slice(builds, func(i, j int) bool { return builds[i].CreatedAt.After(builds[j].CreatedAt) })
 		latestBuildID := builds[0].ID
 		consumer := func(le api.LogEntry) {
 			if logsRaw {
 				fmt.Println(le.Content)
 			} else {
-				fmt.Println(formatLogEntry(&le))
+				fmt.Println(formatLogEntry(&le, width))
 			}
 		}
 		if logsFollow {
@@ -135,7 +156,7 @@ var buildLogsCmd = &cobra.Command{
 
 var buildWatchCmd = &cobra.Command{
 	Use:   "watch [prefix]",
-	Short: "Watch a live build until its completion.",
+	Short: "Watch a build until its completion.",
 	Args:  cobra.MaximumNArgs(1),
 	Run: runAndHandle(func(cmd *cobra.Command, args []string) error {
 		cfg, err := config.NewServiceConfigWithFallback(functionConfiguration, &buildService, globalConfiguration)
@@ -162,8 +183,8 @@ var buildWatchCmd = &cobra.Command{
 		sort.Slice(builds, func(i, j int) bool { return builds[i].CreatedAt.After(builds[j].CreatedAt) })
 		latestBuildID := builds[0].ID
 
-		_, rows, _ := terminal.GetSize(0)
-		bar := progressbar.NewOptions(-1, progressbar.OptionEnableColorCodes(true), progressbar.OptionSpinnerType(3), progressbar.OptionSetElapsedTime(false), progressbar.OptionSetMaxDetailRow(rows-2))
+		terminalWidth, terminalHeight, _ := terminal.GetSize(0)
+		bar := progressbar.NewOptions(-1, progressbar.OptionEnableColorCodes(true), progressbar.OptionSpinnerType(3), progressbar.OptionSetElapsedTime(false), progressbar.OptionSetMaxDetailRow(terminalHeight-2), progressbar.OptionFullWidth())
 		build, err := client.InspectBuild(cfg.Project(), cfg.Service(), latestBuildID)
 		if err != nil {
 			return err
@@ -183,7 +204,9 @@ var buildWatchCmd = &cobra.Command{
 			case api.LogEntryStageTurndown:
 				bar.Describe("Turning down build environment ...")
 			}
-			bar.AddDetail(formatLogEntry(&le))
+			bar.AddDetail(formatLogEntry(&le, terminalWidth))
+			fmt.Printf("\n\033[1A\033[K")
+			bar.RenderBlank()
 		})
 
 		build, err = client.InspectBuild(cfg.Project(), cfg.Service(), latestBuildID)
@@ -192,9 +215,9 @@ var buildWatchCmd = &cobra.Command{
 		}
 		switch build.Status {
 		case "done":
-			bar.Describe("Build has succeeded.")
+			bar.Describe(color.GreenString("Build has succeeded."))
 		case "failed":
-			bar.Describe("Build has failed.")
+			bar.Describe(color.RedString("Build has failed."))
 		}
 		bar.Finish()
 		fmt.Println()
