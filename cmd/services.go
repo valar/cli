@@ -26,7 +26,7 @@ var serviceCmd = &cobra.Command{
 	Aliases: []string{"svc", "services"},
 }
 
-var initCmd = &cobra.Command{
+var serviceInitCmd = &cobra.Command{
 	Use:   "init service",
 	Short: "Configure a new service.",
 	Args:  cobra.ExactArgs(1),
@@ -53,7 +53,7 @@ var initCmd = &cobra.Command{
 	}),
 }
 
-var listCmd = &cobra.Command{
+var serviceListCmd = &cobra.Command{
 	Use:   "list [prefix]",
 	Short: "Show services in the current project.",
 	Args:  cobra.MaximumNArgs(1),
@@ -117,8 +117,46 @@ var serviceLogsCmd = &cobra.Command{
 	}),
 }
 
+var serviceDisableService string
+
+var serviceDisableCmd = &cobra.Command{
+	Use:   "disable [--service service]",
+	Short: "Disables the service.",
+	Args:  cobra.NoArgs,
+	Run: runAndHandle(func(cmd *cobra.Command, args []string) error {
+		client, err := globalConfiguration.APIClient()
+		if err != nil {
+			return err
+		}
+		cfg, err := config.NewServiceConfigWithFallback(functionConfiguration, &serviceDisableService, globalConfiguration)
+		if err != nil {
+			return err
+		}
+		return client.ChangeServiceStatus(cfg.Project(), cfg.Service(), false)
+	}),
+}
+
+var serviceEnableService string
+
+var serviceEnableCmd = &cobra.Command{
+	Use:   "enable [--service service]",
+	Short: "Enables the service.",
+	Args:  cobra.NoArgs,
+	Run: runAndHandle(func(cmd *cobra.Command, args []string) error {
+		client, err := globalConfiguration.APIClient()
+		if err != nil {
+			return err
+		}
+		cfg, err := config.NewServiceConfigWithFallback(functionConfiguration, &serviceEnableService, globalConfiguration)
+		if err != nil {
+			return err
+		}
+		return client.ChangeServiceStatus(cfg.Project(), cfg.Service(), true)
+	}),
+}
+
 func initServicesCmd() {
-	initPf := initCmd.PersistentFlags()
+	initPf := serviceInitCmd.PersistentFlags()
 	initPf.StringArrayVarP(&initIgnore, "ignore", "i", []string{".valar.yml", ".git", "node_modules"}, "Ignore files on push")
 	initPf.StringVarP(&initConstructor, "type", "t", "", "Build constructor type")
 	initPf.StringVarP(&initProject, "project", "p", "", "Project to deploy service to, defaults to project set in global config")
@@ -128,8 +166,6 @@ func initServicesCmd() {
 	serviceLogsCmd.Flags().BoolVarP(&serviceLogsTail, "tail", "t", false, "Jump to end of logs")
 	serviceLogsCmd.Flags().IntVarP(&serviceLogsLines, "skip", "n", 0, "Lines to skip/rewind when reading logs")
 	serviceLogsCmd.Flags().StringVarP(&serviceLogsService, "service", "s", "", "The service to target")
-	serviceCmd.AddCommand(listCmd)
-	serviceCmd.AddCommand(serviceLogsCmd)
-	serviceCmd.AddCommand(initCmd)
+	serviceCmd.AddCommand(serviceListCmd, serviceLogsCmd, serviceInitCmd, serviceEnableCmd, serviceDisableCmd)
 	rootCmd.AddCommand(serviceCmd)
 }

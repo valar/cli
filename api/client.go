@@ -195,6 +195,17 @@ func (client *Client) AbortBuild(project, service, id string) error {
 	return nil
 }
 
+// Sets a service' status. A disabled service cannot receive any requests.
+func (client *Client) ChangeServiceStatus(project, service string, disabled bool) error {
+	var (
+		path = fmt.Sprintf("/projects/%s/services/%s/status?disabled=%v", project, service, disabled)
+	)
+	if err := client.request("POST", path, nil, nil); err != nil {
+		return err
+	}
+	return nil
+}
+
 type LogEntry struct {
 	Timestamp time.Time      `json:"timestamp"`
 	Source    LogEntrySource `json:"source"`
