@@ -103,7 +103,8 @@ valar service init --type=[constructor] [--project=[project-name]] [service]
 
 Valar supports a variety of constructors. If you are looking for an up-to-date list, please refer to [the official documentation](https://docs.valar.dev).
 
-Using the `--project` flag is optional, if it is not defined a value will be inferred from the default project set via the `config` command or the projects supplied by the API service.
+> [!TIP]
+> Using the `--project` flag is optional, if it is not defined a value will be inferred from the default project set via the `config` command or the projects supplied by the API service.
 
 #### Deploying a service
 
@@ -199,7 +200,8 @@ valar domains verify [domain]
 valar domains link [--insecure] [domain] ([service])
 ```
 
-If `--insecure` is enabled, the default HTTP-to-HTTPS redirection handler will be disabled and any plaintext HTTP requests will be forwarded to your service.
+> [!CAUTION]
+> If `--insecure` is enabled, the default HTTP-to-HTTPS redirection handler will be disabled and any plaintext HTTP requests will be forwarded to your service.
 
 #### Unlink a domain from a service
 
@@ -246,6 +248,7 @@ valar builds logs [--follow] [--raw] [optional buildid]
 ```
 
 #### Watch the build and status until its completed
+
 ```bash
 valar builds watch [optional buildid]
 ```
@@ -288,6 +291,7 @@ valar auth clear [path] [user] [read | write | invoke | manage ]
 valar auth check [path] [user] [read | write | invoke | manage]
 ```
 
+> [!WARNING]
 > In case of a public project, this means only the project owner has write, read and invoke access, while any person may invoke a service of the project.
 
 ### Cron
