@@ -98,7 +98,7 @@ Destroying a project deletes all services and configuration associated with it. 
 #### Create local configuration
 
 ```bash
-valar init --type=[constructor] [--project=[project-name]] [service]
+valar service init --type=[constructor] [--project=[project-name]] [service]
 ```
 
 Valar supports a variety of constructors. If you are looking for an up-to-date list, please refer to [the official documentation](https://docs.valar.dev).
@@ -108,49 +108,49 @@ Using the `--project` flag is optional, if it is not defined a value will be inf
 #### Deploying a service
 
 ```bash
-valar push [--skip-deploy]
+valar build push [--skip-deploy]
 ```
 
 #### Listing all services in the project
 
 ```bash
-valar list
+valar service list
 ```
 
 #### Show the logs of the latest deployment
 
 ```bash
-valar logs [--follow] [--tail] [--skip n] [service]
+valar service logs [--follow] [--tail] [--skip n] [service]
 ```
 
 #### Listing all deployments of a service
 
 ```bash
-valar deploys
+valar deployment list
 ```
 
 #### Roll out a specific build
 
 ```bash
-valar deploys create [buildid]
+valar deployment create [buildid]
 ```
 
 #### Reverse service to the previous deployment
 
 ```bash
-valar deploys rollback [--delta 1]
+valar deployment rollback [--delta 1]
 ```
 
 #### Enable a service [not implemented]
 
 ```bash
-valar enable [service]
+valar service enable [service]
 ```
 
 #### Disable a service [not implemented]
 
 ```bash
-valar disable [service]
+valar service disable [service]
 ```
 
 ### Environment variables

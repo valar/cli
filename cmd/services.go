@@ -12,7 +12,6 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/valar/cli/api"
 	"github.com/valar/cli/config"
-	"github.com/valar/cli/util"
 )
 
 const functionConfiguration = ".valar.yml"
@@ -20,6 +19,12 @@ const functionConfiguration = ".valar.yml"
 var initIgnore []string
 var initProject, initConstructor string
 var initForce bool
+
+var serviceCmd = &cobra.Command{
+	Use:     "service",
+	Short:   "Manage individual services.",
+	Aliases: []string{"svc", "services"},
+}
 
 var initCmd = &cobra.Command{
 	Use:   "init service",
@@ -112,63 +117,6 @@ var serviceLogsCmd = &cobra.Command{
 	}),
 }
 
-var pushNoDeploy bool
-
-var pushCmd = &cobra.Command{
-	Use:   "push folder",
-	Short: "Push a new version to Valar.",
-	Args:  cobra.MaximumNArgs(1),
-	Run: runAndHandle(func(cmd *cobra.Command, args []string) error {
-		client, err := globalConfiguration.APIClient()
-		if err != nil {
-			return err
-		}
-		serviceCfg, err := config.NewServiceConfigWithFallback(functionConfiguration, nil, globalConfiguration)
-		if err != nil {
-			return err
-		}
-		folder, err := os.Getwd()
-		if err != nil {
-			return fmt.Errorf("locating working directory: %w", err)
-		}
-		if len(args) != 0 {
-			folder = args[0]
-		}
-		// Upload archive artifact
-		archivePath, err := util.CompressDir(folder, serviceCfg.Build().Ignore)
-		if err != nil {
-			return fmt.Errorf("package compression failed: %w", err)
-		}
-		defer os.Remove(archivePath)
-		targzFile, err := os.Open(archivePath)
-		if err != nil {
-			return fmt.Errorf("package archive failed: %w", err)
-		}
-		defer targzFile.Close()
-		artifact, err := client.SubmitArtifact(serviceCfg.Project(), serviceCfg.Service(), targzFile)
-		if err != nil {
-			return err
-		}
-		// Submit build request
-		var buildReq api.BuildRequest
-		buildReq.Artifact = artifact.Artifact
-		buildReq.Build.Constructor = serviceCfg.Build().Constructor
-		for _, kv := range serviceCfg.Build().Environment {
-			buildReq.Build.Environment = append(buildReq.Build.Environment, api.KVPair(kv))
-		}
-		buildReq.Deployment.Skip = pushNoDeploy
-		for _, kv := range serviceCfg.Deployment().Environment {
-			buildReq.Deployment.Environment = append(buildReq.Deployment.Environment, api.KVPair(kv))
-		}
-		build, err := client.SubmitBuild(serviceCfg.Project(), serviceCfg.Service(), &buildReq)
-		if err != nil {
-			return err
-		}
-		fmt.Println(build.ID)
-		return nil
-	}),
-}
-
 func initServicesCmd() {
 	initPf := initCmd.PersistentFlags()
 	initPf.StringArrayVarP(&initIgnore, "ignore", "i", []string{".valar.yml", ".git", "node_modules"}, "Ignore files on push")
@@ -180,9 +128,8 @@ func initServicesCmd() {
 	serviceLogsCmd.Flags().BoolVarP(&serviceLogsTail, "tail", "t", false, "Jump to end of logs")
 	serviceLogsCmd.Flags().IntVarP(&serviceLogsLines, "skip", "n", 0, "Lines to skip/rewind when reading logs")
 	serviceLogsCmd.Flags().StringVarP(&serviceLogsService, "service", "s", "", "The service to target")
-	rootCmd.AddCommand(listCmd)
-	rootCmd.AddCommand(serviceLogsCmd)
-	rootCmd.AddCommand(initCmd)
-	pushCmd.Flags().BoolVarP(&pushNoDeploy, "skip-deploy", "s", false, "Only build, skip deploy action")
-	rootCmd.AddCommand(pushCmd)
+	serviceCmd.AddCommand(listCmd)
+	serviceCmd.AddCommand(serviceLogsCmd)
+	serviceCmd.AddCommand(initCmd)
+	rootCmd.AddCommand(serviceCmd)
 }

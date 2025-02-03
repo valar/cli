@@ -15,6 +15,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/valar/cli/api"
 	"github.com/valar/cli/config"
+	"github.com/valar/cli/util"
 	"golang.org/x/crypto/ssh/terminal"
 )
 
@@ -350,10 +351,68 @@ func colorize(status string) string {
 	}
 }
 
+var buildPushNoDeploy bool
+
+var buildPushCmd = &cobra.Command{
+	Use:   "push folder",
+	Short: "Push and build a new version.",
+	Args:  cobra.MaximumNArgs(1),
+	Run: runAndHandle(func(cmd *cobra.Command, args []string) error {
+		client, err := globalConfiguration.APIClient()
+		if err != nil {
+			return err
+		}
+		serviceCfg, err := config.NewServiceConfigWithFallback(functionConfiguration, nil, globalConfiguration)
+		if err != nil {
+			return err
+		}
+		folder, err := os.Getwd()
+		if err != nil {
+			return fmt.Errorf("locating working directory: %w", err)
+		}
+		if len(args) != 0 {
+			folder = args[0]
+		}
+		// Upload archive artifact
+		archivePath, err := util.CompressDir(folder, serviceCfg.Build().Ignore)
+		if err != nil {
+			return fmt.Errorf("package compression failed: %w", err)
+		}
+		defer os.Remove(archivePath)
+		targzFile, err := os.Open(archivePath)
+		if err != nil {
+			return fmt.Errorf("package archive failed: %w", err)
+		}
+		defer targzFile.Close()
+		artifact, err := client.SubmitArtifact(serviceCfg.Project(), serviceCfg.Service(), targzFile)
+		if err != nil {
+			return err
+		}
+		// Submit build request
+		var buildReq api.BuildRequest
+		buildReq.Artifact = artifact.Artifact
+		buildReq.Build.Constructor = serviceCfg.Build().Constructor
+		for _, kv := range serviceCfg.Build().Environment {
+			buildReq.Build.Environment = append(buildReq.Build.Environment, api.KVPair(kv))
+		}
+		buildReq.Deployment.Skip = buildPushNoDeploy
+		for _, kv := range serviceCfg.Deployment().Environment {
+			buildReq.Deployment.Environment = append(buildReq.Deployment.Environment, api.KVPair(kv))
+		}
+		build, err := client.SubmitBuild(serviceCfg.Project(), serviceCfg.Service(), &buildReq)
+		if err != nil {
+			return err
+		}
+		fmt.Println(build.ID)
+		return nil
+	}),
+}
+
 func initBuildsCmd() {
 	buildCmd.PersistentFlags().StringVarP(&buildService, "service", "s", "", "The service to inspect for builds")
 	buildLogsCmd.PersistentFlags().BoolVarP(&logsFollow, "follow", "f", false, "Follow the logs")
 	buildLogsCmd.PersistentFlags().BoolVarP(&logsRaw, "raw", "r", false, "Dump the unformatted log content")
-	buildCmd.AddCommand(buildListCmd, buildInspectCmd, buildLogsCmd, buildAbortCmd, buildStatusCmd, buildWatchCmd)
+	buildPushCmd.Flags().BoolVarP(&buildPushNoDeploy, "skip-deploy", "s", false, "Only build, skip deploy action")
+	buildCmd.AddCommand(buildListCmd, buildInspectCmd, buildLogsCmd, buildAbortCmd, buildStatusCmd, buildWatchCmd, buildPushCmd)
 	rootCmd.AddCommand(buildCmd)
 }

@@ -13,9 +13,9 @@ import (
 )
 
 var domainsCmd = &cobra.Command{
-	Use:     "domains",
+	Use:     "domain",
 	Short:   "Manage custom domains.",
-	Aliases: []string{"dom"},
+	Aliases: []string{"dom", "domains"},
 }
 
 var domainsListCmd = &cobra.Command{
