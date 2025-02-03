@@ -106,12 +106,6 @@ Valar supports a variety of constructors. If you are looking for an up-to-date l
 > [!TIP]
 > Using the `--project` flag is optional, if it is not defined a value will be inferred from the default project set via the `config` command or the projects supplied by the API service.
 
-#### Deploying a service
-
-```bash
-valar build push [--skip-deploy]
-```
-
 #### Listing all services in the project
 
 ```bash
@@ -122,6 +116,18 @@ valar service list
 
 ```bash
 valar service logs [--follow] [--tail] [--skip n] [service]
+```
+
+#### Enable a service [not implemented]
+
+```bash
+valar service enable [service]
+```
+
+#### Disable a service [not implemented]
+
+```bash
+valar service disable [service]
 ```
 
 #### Listing all deployments of a service
@@ -140,18 +146,6 @@ valar deployment create [buildid]
 
 ```bash
 valar deployment rollback [--delta 1]
-```
-
-#### Enable a service [not implemented]
-
-```bash
-valar service enable [service]
-```
-
-#### Disable a service [not implemented]
-
-```bash
-valar service disable [service]
 ```
 
 ### Environment variables
@@ -216,6 +210,12 @@ valar domains delete [domain]
 ```
 
 ### Builds
+
+#### Pushing a new build
+
+```bash
+valar builds push [--skip-deploy]
+```
 
 #### Listing all builds
 
