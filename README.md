@@ -214,7 +214,7 @@ valar domains delete [domain]
 #### Pushing a new build
 
 ```bash
-valar builds push [--skip-deploy]
+valar builds push [--no-deploy]
 ```
 
 #### Listing all builds

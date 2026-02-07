@@ -412,7 +412,7 @@ func initBuildsCmd() {
 	buildCmd.PersistentFlags().StringVarP(&buildService, "service", "s", "", "The service to inspect for builds")
 	buildLogsCmd.PersistentFlags().BoolVarP(&logsFollow, "follow", "f", false, "Follow the logs")
 	buildLogsCmd.PersistentFlags().BoolVarP(&logsRaw, "raw", "r", false, "Dump the unformatted log content")
-	buildPushCmd.Flags().BoolVarP(&buildPushNoDeploy, "skip-deploy", "s", false, "Only build, skip deploy action")
+	buildPushCmd.Flags().BoolVar(&buildPushNoDeploy, "no-deploy", false, "Only build, skip deploy action")
 	buildCmd.AddCommand(buildListCmd, buildInspectCmd, buildLogsCmd, buildAbortCmd, buildStatusCmd, buildWatchCmd, buildPushCmd)
 	rootCmd.AddCommand(buildCmd)
 }
