@@ -6,6 +6,7 @@ import (
 	"strings"
 	"text/tabwriter"
 
+	"github.com/juju/ansiterm"
 	"github.com/spf13/cobra"
 	"github.com/valar/cli/api"
 	"github.com/valar/cli/config"
@@ -108,6 +109,27 @@ var (
 		Use:   "auth",
 		Short: "Manage user and service permissions.",
 	}
+
+	whoamiCmd = &cobra.Command{
+		Use:   "whoami",
+		Short: "Show the currently authenticated user.",
+		Args:  cobra.NoArgs,
+		Run: runAndHandle(func(cmd *cobra.Command, args []string) error {
+			client, err := globalConfiguration.APIClient()
+			if err != nil {
+				return err
+			}
+			info, err := client.UserInfo()
+			if err != nil {
+				return err
+			}
+			tw := ansiterm.NewTabWriter(os.Stdout, 6, 0, 1, ' ', 0)
+			fmt.Fprintf(tw, "User:\t%s\n", info.Name)
+			fmt.Fprintf(tw, "Projects:\t%s\n", strings.Join(info.Projects, ", "))
+			tw.Flush()
+			return nil
+		}),
+	}
 )
 
 func authModifyWithState(state string) func(cmd *cobra.Command, args []string) error {
@@ -150,4 +172,5 @@ func authModifyWithState(state string) func(cmd *cobra.Command, args []string) e
 func initProjectsCmd() {
 	authCmd.AddCommand(authListCmd, authAllowCmd, authForbidCmd, authClearCmd, authCheckCmd)
 	rootCmd.AddCommand(authCmd)
+	rootCmd.AddCommand(whoamiCmd)
 }
