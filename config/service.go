@@ -112,7 +112,7 @@ func (w *ValidatedServiceConfig) Deployment() DeploymentConfig {
 }
 
 func (w *ValidatedServiceConfig) Unwrap() ServiceConfigYAML {
-	return ServiceConfigYAML{}
+	return w.yaml
 }
 
 func NewServiceConfigFromFile(path string) (*ValidatedServiceConfig, error) {
