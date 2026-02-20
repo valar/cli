@@ -13,12 +13,13 @@ brew install valar/tap/valar
 ### Initial setup
 
 ```bash
-# Add the Valar API endpoint
-valar config endpoint add default --token=[your-api-token] --url=https://api.valar.dev/v2
-# Add a new project context
-valar config context add default --project=[your-project] --endpoint=default
-# Set the configured context as the default one
-valar config context use default
+valar config init
+```
+
+The interactive wizard will prompt for your API endpoint, token, and project. For non-interactive usage (e.g. in CI), pass all values as flags:
+
+```bash
+valar config init --token=[your-api-token] --project=[your-project]
 ```
 
 ## Usage
@@ -26,6 +27,12 @@ valar config context use default
 By default, Valar uses the default valarconfig file in `$HOME/.valar/config`. If the `VALARCONFIG` environment variable does exist, `valar` uses an effective configuration that is the result of merging the files listed in the `VALARCONFIG` variable.
 
 ### Configuration
+
+#### Initialize configuration
+
+```bash
+valar config init [--token token] [--project project] [--url url] [--name name] [--force]
+```
 
 #### Dump the current configuration as YAML
 
@@ -118,16 +125,16 @@ valar service list
 valar service logs [--follow] [--tail] [--skip n] [service]
 ```
 
-#### Enable a service [not implemented]
+#### Enable a service
 
 ```bash
-valar service enable [service]
+valar service enable [--service service]
 ```
 
-#### Disable a service [not implemented]
+#### Disable a service
 
 ```bash
-valar service disable [service]
+valar service disable [--service service]
 ```
 
 #### Listing all deployments of a service
@@ -257,6 +264,14 @@ valar builds watch [optional buildid]
 
 ```bash
 valar builds status [--exit] [buildid]
+```
+
+### Identity
+
+#### Show the currently authenticated user
+
+```bash
+valar whoami
 ```
 
 ### Permissions
