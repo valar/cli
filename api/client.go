@@ -114,40 +114,36 @@ func (client *Client) ListServices(project, service string) ([]Service, error) {
 // stream reconnects and resumes if the connection is cut.
 func (client *Client) StreamServiceLogs(project, service string, w io.Writer, follow, tail bool, skip int) error {
 	base := fmt.Sprintf("/projects/%s/services/%s/logs", project, service)
-	logPath := func(seek string, lines int) string {
-		params := url.Values{}
-		params.Set("seek", seek)
-		params.Set("skip", strconv.Itoa(lines))
+	logPath := func(params url.Values) string {
 		if follow {
 			params.Set("follow", "true")
 			params.Set("keepalive", keepaliveInterval.String())
 		}
 		return base + "?" + params.Encode()
 	}
-	if !follow {
-		seek := "start"
-		if tail {
-			seek = "end"
-		}
-		return client.streamOnce(logPath(seek, skip), w)
-	}
+	seek := "start"
 	if tail {
-		// A tail is anchored to the end of the log, so there is no absolute
-		// line to resume from: a reconnect re-anchors to the current end.
-		first := true
-		return client.follow(followOptions{path: func(int) string {
-			back := skip
-			if !first {
-				back = 0
-			}
-			first = false
-			return logPath("end", back)
-		}}, w)
+		seek = "end"
 	}
-	return client.follow(followOptions{
-		skipped: skip,
-		path:    func(resumeAfter int) string { return logPath("start", resumeAfter) },
-	}, w)
+	start := url.Values{"seek": {seek}, "skip": {strconv.Itoa(skip)}}
+	if !follow {
+		return client.streamOnce(logPath(start), w)
+	}
+	// A stream that starts at the beginning of the log resumes at an exact byte
+	// offset. One anchored to the end of the log, or started at a line offset,
+	// has no absolute position to resume from, so it re-anchors to the current
+	// end and may miss lines written while reconnecting.
+	exact := !tail && skip == 0
+	return client.follow(followOptions{path: func(resumeAfter int) string {
+		switch {
+		case resumeAfter == 0:
+			return logPath(start)
+		case exact:
+			return logPath(url.Values{"seek": {"start"}, "offset": {strconv.Itoa(resumeAfter)}})
+		default:
+			return logPath(url.Values{"seek": {"end"}})
+		}
+	}}, w)
 }
 
 // SubmitArtifact submits a new build input artifact to the server.
@@ -288,7 +284,7 @@ func (client *Client) StreamBuildLogs(project, service, id string, consumer func
 			params := url.Values{}
 			params.Set("follow", "true")
 			params.Set("keepalive", keepaliveInterval.String())
-			params.Set("skip", strconv.Itoa(resumeAfter))
+			params.Set("offset", strconv.Itoa(resumeAfter))
 			return base + "?" + params.Encode()
 		},
 	}, decoder)

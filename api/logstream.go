@@ -2,11 +2,11 @@ package api
 
 import (
 	"bufio"
-	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"mime"
 	"net/http"
 	"time"
 )
@@ -20,7 +20,10 @@ const (
 	keepaliveInterval = 20 * time.Second
 	// maxLogFrameSize bounds a single framed message.
 	maxLogFrameSize = 1 << 20
+)
 
+// Reconnect pacing, relaxed by tests.
+var (
 	reconnectBaseDelay = 250 * time.Millisecond
 	reconnectMaxDelay  = 5 * time.Second
 	// maxReconnectTries bounds consecutive reconnects that deliver nothing, so
@@ -35,84 +38,55 @@ type logFrame struct {
 	Keepalive bool   `json:"keepalive,omitempty"`
 }
 
-// lineWriter forwards whole log lines to w and counts them, holding back a
-// trailing partial line. Counting complete lines lets an interrupted follow
-// resume on a line boundary without duplicating or dropping output.
-type lineWriter struct {
-	w       io.Writer
-	pending []byte
-	lines   int
+// countingWriter forwards bytes untouched and records how many have been
+// delivered, so an interrupted follow can resume at the exact byte it stopped
+// at. Bytes pass straight through: a log that writes without trailing newlines
+// still appears as it arrives.
+type countingWriter struct {
+	w     io.Writer
+	bytes int
 }
 
-func (lw *lineWriter) Write(b []byte) (int, error) {
-	lw.pending = append(lw.pending, b...)
-	end := bytes.LastIndexByte(lw.pending, '\n')
-	if end < 0 {
-		return len(b), nil
-	}
-	complete := lw.pending[:end+1]
-	if _, err := lw.w.Write(complete); err != nil {
-		return 0, err
-	}
-	lw.lines += bytes.Count(complete, []byte{'\n'})
-	lw.pending = append(lw.pending[:0], lw.pending[end+1:]...)
-	return len(b), nil
-}
-
-// discardPartial drops the buffered partial line, which the server resends from
-// the last complete line when the stream resumes.
-func (lw *lineWriter) discardPartial() {
-	lw.pending = lw.pending[:0]
-}
-
-// flush writes out a trailing line that never got a newline.
-func (lw *lineWriter) flush() error {
-	if len(lw.pending) == 0 {
-		return nil
-	}
-	if _, err := lw.w.Write(lw.pending); err != nil {
-		return err
-	}
-	lw.pending = lw.pending[:0]
-	return nil
+func (cw *countingWriter) Write(b []byte) (int, error) {
+	n, err := cw.w.Write(b)
+	cw.bytes += n
+	return n, err
 }
 
 // followOptions describes a resumable log stream.
 type followOptions struct {
 	// path builds the request path for a connection that resumes after the
-	// given number of already-delivered lines.
+	// given number of already-delivered log bytes.
 	path func(resumeAfter int) string
 	// finite is true when the server ends the stream on purpose once the log is
 	// complete, as it does for a finished build.
 	finite bool
-	// skipped is the number of lines the caller asked to skip up front.
-	skipped int
 }
 
 // follow streams a log, reconnecting when the connection is cut. A follow can
 // idle for minutes at a time and intermediaries routinely drop idle
 // connections, so a cut is expected rather than fatal.
 func (client *Client) follow(opts followOptions, w io.Writer) error {
-	lw := &lineWriter{w: w, lines: opts.skipped}
-	defer lw.flush()
-
+	counter := &countingWriter{w: w}
 	for tries := 0; ; {
-		before := lw.lines
-		err := client.streamOnce(opts.path(lw.lines), lw)
+		before := counter.bytes
+		err := client.streamOnce(opts.path(counter.bytes), counter)
 		if err == nil && opts.finite {
 			return nil
 		}
 		if !retryable(err) {
 			return err
 		}
-		if lw.lines > before {
+		if counter.bytes > before {
 			tries = 0
 		} else if tries++; tries >= maxReconnectTries {
-			// Nothing is coming through; report the cut rather than spin.
+			// Nothing is coming through; report it rather than spin or, worse,
+			// exit successfully as though the log had ended.
+			if err == nil {
+				return fmt.Errorf("log stream closed %d times without delivering data", tries)
+			}
 			return err
 		}
-		// A cut mid-line leaves a partial the server resends on resume.
-		lw.discardPartial()
 		time.Sleep(reconnectDelay(tries))
 	}
 }
@@ -156,20 +130,13 @@ func (client *Client) streamOnce(path string, w io.Writer) error {
 			ServerError: parseErrorResponse(body),
 		}
 	}
-	if mediaType(resp.Header.Get("Content-Type")) == logStreamContentType {
+	if contentType, _, err := mime.ParseMediaType(resp.Header.Get("Content-Type")); err == nil && contentType == logStreamContentType {
 		return decodeFramedStream(resp.Body, w)
 	}
 	if _, err := io.Copy(w, resp.Body); err != nil && err != io.EOF {
 		return fmt.Errorf("copying request: %w", err)
 	}
 	return nil
-}
-
-func mediaType(contentType string) string {
-	if idx := bytes.IndexByte([]byte(contentType), ';'); idx >= 0 {
-		return contentType[:idx]
-	}
-	return contentType
 }
 
 // decodeFramedStream writes framed log payloads to w and drops keepalives.

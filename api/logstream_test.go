@@ -10,10 +10,19 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 )
 
 func newTestClient(endpoint string) *Client {
 	return &Client{Endpoint: endpoint, stream: &http.Client{}}
+}
+
+// withFastReconnects shortens the reconnect backoff for the duration of a test.
+func withFastReconnects(t *testing.T) func() {
+	t.Helper()
+	base, max := reconnectBaseDelay, reconnectMaxDelay
+	reconnectBaseDelay, reconnectMaxDelay = time.Millisecond, 2*time.Millisecond
+	return func() { reconnectBaseDelay, reconnectMaxDelay = base, max }
 }
 
 // cutConnection ends a response without a terminating chunk, the way an idle
@@ -33,27 +42,27 @@ func cutConnection(t *testing.T, w http.ResponseWriter) {
 	conn.Close()
 }
 
-func TestLineWriter_HoldsBackPartialLines(t *testing.T) {
+// TestCountingWriter_PassesBytesStraightThrough guards against reintroducing
+// line buffering: output with no trailing newline must still appear as it
+// arrives, not be withheld until a newline shows up.
+func TestCountingWriter_PassesBytesStraightThrough(t *testing.T) {
 	var out bytes.Buffer
-	lw := &lineWriter{w: &out}
+	cw := &countingWriter{w: &out}
 
-	for _, chunk := range []string{"one\ntw", "o\nthree"} {
-		if _, err := lw.Write([]byte(chunk)); err != nil {
+	for _, chunk := range []string{"progress: 10%\r", "progress: 20%\r"} {
+		if _, err := cw.Write([]byte(chunk)); err != nil {
 			t.Fatalf("write: %v", err)
+		}
+		if out.Len() == 0 {
+			t.Fatal("writer withheld output that contained no newline")
 		}
 	}
 
-	if got, want := out.String(), "one\ntwo\n"; got != want {
+	if got, want := out.String(), "progress: 10%\rprogress: 20%\r"; got != want {
 		t.Errorf("got %q, want %q", got, want)
 	}
-	if lw.lines != 2 {
-		t.Errorf("got %d lines, want 2", lw.lines)
-	}
-	if err := lw.flush(); err != nil {
-		t.Fatalf("flush: %v", err)
-	}
-	if got, want := out.String(), "one\ntwo\nthree"; got != want {
-		t.Errorf("after flush got %q, want %q", got, want)
+	if cw.bytes != out.Len() {
+		t.Errorf("got %d bytes counted, want %d", cw.bytes, out.Len())
 	}
 }
 
@@ -94,36 +103,34 @@ func TestDecodeFramedStream_WireFormat(t *testing.T) {
 }
 
 // TestFollow_ResumesAfterCut is the regression test for log tails dying on an
-// idle connection: the stream is cut mid-line and must resume on the next line
-// boundary without dropping or duplicating output.
+// idle connection: the stream is cut mid-line and must resume at the exact byte
+// it stopped at, without dropping or duplicating output.
 func TestFollow_ResumesAfterCut(t *testing.T) {
-	log := []string{"line1\n", "line2\n", "line3\n", "line4\n"}
+	const log = "line1\nline2\nline3\nline4\n"
 
 	var mu sync.Mutex
-	var skips []int
+	var offsets []int
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		skip, err := strconv.Atoi(r.URL.Query().Get("skip"))
-		if err != nil {
-			t.Errorf("bad skip %q: %v", r.URL.Query().Get("skip"), err)
+		offset, err := strconv.Atoi(r.URL.Query().Get("offset"))
+		if err != nil || offset < 0 || offset > len(log) {
+			t.Errorf("bad offset %q: %v", r.URL.Query().Get("offset"), err)
 			return
 		}
 		mu.Lock()
-		attempt := len(skips)
-		skips = append(skips, skip)
+		attempt := len(offsets)
+		offsets = append(offsets, offset)
 		mu.Unlock()
 
 		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		if attempt == 0 {
-			// Two whole lines plus a partial one, then a cut.
-			fmt.Fprint(w, log[0], log[1], "lin")
+			// Stop mid-line, then cut without a terminating chunk.
+			fmt.Fprint(w, log[:15])
 			w.(http.Flusher).Flush()
 			cutConnection(t, w)
 			return
 		}
-		for _, line := range log[skip:] {
-			fmt.Fprint(w, line)
-		}
+		fmt.Fprint(w, log[offset:])
 	}))
 	defer srv.Close()
 
@@ -132,20 +139,40 @@ func TestFollow_ResumesAfterCut(t *testing.T) {
 	err := client.follow(followOptions{
 		finite: true,
 		path: func(resumeAfter int) string {
-			return "/logs?skip=" + strconv.Itoa(resumeAfter)
+			return "/logs?offset=" + strconv.Itoa(resumeAfter)
 		},
 	}, &out)
 	if err != nil {
 		t.Fatalf("follow: %v", err)
 	}
 
-	if got, want := out.String(), strings.Join(log, ""); got != want {
-		t.Errorf("got %q, want %q", got, want)
+	if got := out.String(); got != log {
+		t.Errorf("got %q, want %q", got, log)
 	}
 	mu.Lock()
 	defer mu.Unlock()
-	if want := []int{0, 2}; !equalInts(skips, want) {
-		t.Errorf("got skips %v, want %v", skips, want)
+	if want := []int{0, 15}; !equalInts(offsets, want) {
+		t.Errorf("got offsets %v, want %v", offsets, want)
+	}
+}
+
+// TestFollow_ReportsRepeatedEmptyCloses covers a server that keeps closing the
+// stream without sending anything: the command must fail loudly rather than
+// exit successfully as though the log had ended.
+func TestFollow_ReportsRepeatedEmptyCloses(t *testing.T) {
+	defer withFastReconnects(t)()
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	}))
+	defer srv.Close()
+
+	client := newTestClient(srv.URL)
+	err := client.follow(followOptions{
+		path: func(resumeAfter int) string { return "/logs?offset=" + strconv.Itoa(resumeAfter) },
+	}, &bytes.Buffer{})
+	if err == nil {
+		t.Fatal("expected an error after repeated empty closes")
 	}
 }
 
@@ -165,7 +192,7 @@ func TestFollow_DoesNotRetryRejectedRequests(t *testing.T) {
 
 	client := newTestClient(srv.URL)
 	err := client.follow(followOptions{
-		path: func(int) string { return "/logs?skip=0" },
+		path: func(int) string { return "/logs?offset=0" },
 	}, &bytes.Buffer{})
 	if err == nil {
 		t.Fatal("expected an error")
@@ -199,7 +226,7 @@ func TestFollow_DecodesFramedResponses(t *testing.T) {
 	client := newTestClient(srv.URL)
 	if err := client.follow(followOptions{
 		finite: true,
-		path:   func(int) string { return "/logs?skip=0" },
+		path:   func(int) string { return "/logs?offset=0" },
 	}, &out); err != nil {
 		t.Fatalf("follow: %v", err)
 	}
