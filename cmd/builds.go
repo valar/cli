@@ -196,7 +196,7 @@ var buildWatchCmd = &cobra.Command{
 			bar.Describe("Scheduling build onto worker ...")
 		}
 
-		client.StreamBuildLogs(cfg.Project(), cfg.Service(), latestBuildID, func(le api.LogEntry) {
+		if err := client.StreamBuildLogs(cfg.Project(), cfg.Service(), latestBuildID, func(le api.LogEntry) {
 			switch le.Stage {
 			case api.LogEntryStageUnspecified:
 				bar.Describe("Processing ...")
@@ -208,7 +208,11 @@ var buildWatchCmd = &cobra.Command{
 			bar.AddDetail(formatLogEntry(&le, terminalWidth))
 			fmt.Printf("\n\033[1A\033[K")
 			bar.RenderBlank()
-		})
+		}); err != nil {
+			bar.Finish()
+			fmt.Println()
+			return fmt.Errorf("streaming build logs: %w", err)
+		}
 
 		build, err = client.InspectBuild(cfg.Project(), cfg.Service(), latestBuildID)
 		if err != nil {

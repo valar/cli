@@ -25,7 +25,10 @@ type Client struct {
 	Endpoint string
 	Token    string
 
-	http *http.Client
+	// http carries buffered requests, stream carries log streams. They are
+	// separate because a stream must not inherit a request deadline.
+	http   *http.Client
+	stream *http.Client
 }
 
 func (client *Client) UserInfo() (*UserInfo, error) {
@@ -66,37 +69,7 @@ func parseErrorResponse(body []byte) error {
 	return serverErr
 }
 
-func (client *Client) streamRequest(method, path string, w io.Writer) error {
-	client.http.Timeout = 0
-	req, err := http.NewRequest(method, client.Endpoint+path, nil)
-	if err != nil {
-		return fmt.Errorf("client request: %w", err)
-	}
-	req.Header.Add("Authorization", "Bearer "+client.Token)
-
-	resp, err := client.http.Do(req)
-	if err != nil {
-		return fmt.Errorf("submitting request: %w", err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		body, err := io.ReadAll(resp.Body)
-		if err != nil {
-			return fmt.Errorf("fetching response: %w", err)
-		}
-		return Error{
-			StatusCode:  resp.StatusCode,
-			ServerError: parseErrorResponse(body),
-		}
-	}
-	if _, err := io.Copy(w, resp.Body); err != nil && err != io.EOF {
-		return fmt.Errorf("copying request: %w", err)
-	}
-	return nil
-}
-
 func (client *Client) request(method, path string, obj interface{}, post io.Reader) error {
-	client.http.Timeout = time.Minute
 	req, err := http.NewRequest(method, client.Endpoint+path, post)
 	if err != nil {
 		return fmt.Errorf("client request: %w", err)
@@ -137,25 +110,40 @@ func (client *Client) ListServices(project, service string) ([]Service, error) {
 	return services, nil
 }
 
-// StreamServiceLogs streams the logs of the latest service endpoint.
+// StreamServiceLogs streams the logs of the latest service endpoint. A followed
+// stream reconnects and resumes if the connection is cut.
 func (client *Client) StreamServiceLogs(project, service string, w io.Writer, follow, tail bool, skip int) error {
-	params := url.Values{}
-	if follow {
-		params.Set("follow", "true")
+	base := fmt.Sprintf("/projects/%s/services/%s/logs", project, service)
+	logPath := func(params url.Values) string {
+		if follow {
+			params.Set("follow", "true")
+			params.Set("keepalive", keepaliveInterval.String())
+		}
+		return base + "?" + params.Encode()
 	}
+	seek := "start"
 	if tail {
-		params.Set("seek", "end")
-	} else {
-		params.Set("seek", "start")
+		seek = "end"
 	}
-	params.Set("skip", strconv.Itoa(skip))
-	var (
-		path = fmt.Sprintf("/projects/%s/services/%s/logs?%s", project, service, params.Encode())
-	)
-	if err := client.streamRequest(http.MethodGet, path, w); err != nil {
-		return err
+	start := url.Values{"seek": {seek}, "skip": {strconv.Itoa(skip)}}
+	if !follow {
+		return client.streamOnce(logPath(start), w)
 	}
-	return nil
+	// A stream that starts at the beginning of the log resumes at an exact byte
+	// offset. One anchored to the end of the log, or started at a line offset,
+	// has no absolute position to resume from, so it re-anchors to the current
+	// end and may miss lines written while reconnecting.
+	exact := !tail && skip == 0
+	return client.follow(followOptions{path: func(resumeAfter int) string {
+		switch {
+		case resumeAfter == 0:
+			return logPath(start)
+		case exact:
+			return logPath(url.Values{"seek": {"start"}, "offset": {strconv.Itoa(resumeAfter)}})
+		default:
+			return logPath(url.Values{"seek": {"end"}})
+		}
+	}}, w)
 }
 
 // SubmitArtifact submits a new build input artifact to the server.
@@ -233,13 +221,17 @@ type logEntryDecoder struct {
 	consumer func(LogEntry)
 	writer   *io.PipeWriter
 	done     chan struct{}
+	err      error
 }
 
 func newLogEntryDecoder(consumer func(LogEntry)) *logEntryDecoder {
-	done := make(chan struct{}, 1)
+	decoder := &logEntryDecoder{consumer: consumer, done: make(chan struct{})}
 	reader, writer := io.Pipe()
+	decoder.writer = writer
 	go func() {
+		defer close(decoder.done)
 		scanner := bufio.NewScanner(reader)
+		scanner.Buffer(make([]byte, 0, bufio.MaxScanTokenSize), maxLogFrameSize)
 		for scanner.Scan() {
 			logentry := LogEntry{}
 			logline := scanner.Text()
@@ -249,22 +241,26 @@ func newLogEntryDecoder(consumer func(LogEntry)) *logEntryDecoder {
 			}
 			consumer(logentry)
 		}
-		close(done)
+		decoder.err = scanner.Err()
+		// Fail pending writes instead of blocking on a pipe nobody reads.
+		reader.CloseWithError(decoder.err)
 	}()
-
-	return &logEntryDecoder{consumer, writer, done}
+	return decoder
 }
 
 func (decoder *logEntryDecoder) Write(b []byte) (int, error) {
 	return decoder.writer.Write(b)
 }
 
-func (decoder *logEntryDecoder) Close() error {
-	return decoder.writer.Close()
-}
-
-func (decoder *logEntryDecoder) Wait() {
+// finish closes the decoder and reports the first error seen, preferring the
+// stream error over a decode error.
+func (decoder *logEntryDecoder) finish(streamErr error) error {
+	decoder.writer.Close()
 	<-decoder.done
+	if streamErr != nil {
+		return streamErr
+	}
+	return decoder.err
 }
 
 // ShowBuildLogs retrieves a specific build task logs.
@@ -273,30 +269,26 @@ func (client *Client) ShowBuildLogs(project, service, id string, consumer func(L
 		path = fmt.Sprintf("/projects/%s/services/%s/builds/%s/logs", project, service, id)
 	)
 	decoder := newLogEntryDecoder(consumer)
-	if err := client.streamRequest(http.MethodGet, path, decoder); err != nil {
-		return err
-	}
-	if err := decoder.Close(); err != nil {
-		return err
-	}
-	decoder.Wait()
-	return nil
+	err := client.streamOnce(path, decoder)
+	return decoder.finish(err)
 }
 
-// StreamBuildLogs streams the active build logs to stdout.
+// StreamBuildLogs streams the active build logs to stdout, reconnecting and
+// resuming if the connection is cut before the build finishes.
 func (client *Client) StreamBuildLogs(project, service, id string, consumer func(LogEntry)) error {
-	var (
-		path = fmt.Sprintf("/projects/%s/services/%s/builds/%s/logs?follow=true", project, service, id)
-	)
+	base := fmt.Sprintf("/projects/%s/services/%s/builds/%s/logs", project, service, id)
 	decoder := newLogEntryDecoder(consumer)
-	if err := client.streamRequest(http.MethodGet, path, decoder); err != nil {
-		return err
-	}
-	if err := decoder.Close(); err != nil {
-		return err
-	}
-	decoder.Wait()
-	return nil
+	err := client.follow(followOptions{
+		finite: true,
+		path: func(resumeAfter int) string {
+			params := url.Values{}
+			params.Set("follow", "true")
+			params.Set("keepalive", keepaliveInterval.String())
+			params.Set("offset", strconv.Itoa(resumeAfter))
+			return base + "?" + params.Encode()
+		},
+	}, decoder)
+	return decoder.finish(err)
 }
 
 // InspectBuild retrieves a specific build task.
@@ -703,6 +695,7 @@ func NewClient(endpoint, token string) (*Client, error) {
 		http: &http.Client{
 			Timeout: time.Minute,
 		},
+		stream: &http.Client{},
 	}
 	if err := client.check(); err != nil {
 		return nil, err
