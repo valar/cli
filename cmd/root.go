@@ -49,6 +49,8 @@ func init() {
 	initConfigCmd()
 	// Configure cron.go
 	initCronCmd()
+	// Configure batch.go
+	initBatchCmd()
 }
 
 func runAndHandle(f func(*cobra.Command, []string) error) func(*cobra.Command, []string) {

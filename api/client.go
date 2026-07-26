@@ -159,11 +159,15 @@ func (client *Client) StreamServiceLogs(project, service string, w io.Writer, fo
 }
 
 // SubmitArtifact submits a new build input artifact to the server.
-func (client *Client) SubmitArtifact(project, service string, archive io.ReadCloser) (*Artifact, error) {
+func (client *Client) SubmitArtifact(project, service, kind string, archive io.ReadCloser) (*Artifact, error) {
 	var (
 		artifact Artifact
 		path     = fmt.Sprintf("/projects/%s/services/%s/artifacts", project, service)
 	)
+	// The body is the artifact itself, so kind travels as a query parameter.
+	if kind != "" {
+		path += "?kind=" + url.QueryEscape(kind)
+	}
 	if err := client.request(http.MethodPost, path, &artifact, archive); err != nil {
 		return nil, err
 	}
@@ -511,6 +515,121 @@ func (client *Client) VerifyDomain(project, domain string) (*Domain, error) {
 	return &dom, nil
 }
 
+// BatchExecution is one run-to-completion execution of a batch service.
+type BatchExecution struct {
+	ID          string            `json:"id"`
+	Service     string            `json:"service"`
+	Build       string            `json:"build"`
+	Owner       string            `json:"owner"`
+	Status      string            `json:"status"`
+	Args        []string          `json:"args"`
+	Environment map[string]string `json:"environment"`
+	Error       string            `json:"error"`
+	ExitCode    int32             `json:"exitCode"`
+	Attempts    int32             `json:"attempts"`
+	// BlockedGate names the admission gate that last refused this execution.
+	// Empty on a pending execution means it is simply queued behind others
+	// rather than blocked on capacity.
+	BlockedGate string     `json:"blockedGate"`
+	CreatedAt   time.Time  `json:"createdAt"`
+	FinishedAt  *time.Time `json:"finishedAt"`
+}
+
+// BatchExecutionRequest triggers an execution. An empty Build asks the server
+// for the latest successful build.
+type BatchExecutionRequest struct {
+	Build       string            `json:"build,omitempty"`
+	Args        []string          `json:"args,omitempty"`
+	Environment map[string]string `json:"environment,omitempty"`
+}
+
+// BatchConfig is a batch service's kind-specific configuration.
+type BatchConfig struct {
+	MaxParallelism int32 `json:"maxParallelism"`
+	TimeoutSeconds int32 `json:"timeoutSeconds"`
+	Weight         int32 `json:"weight"`
+}
+
+func batchPath(project, service string) string {
+	return fmt.Sprintf("/projects/%s/services/%s/batch/executions", project, service)
+}
+
+// TriggerBatchExecution queues a new execution.
+func (client *Client) TriggerBatchExecution(project, service string, req *BatchExecutionRequest) (*BatchExecution, error) {
+	payload, err := json.Marshal(req)
+	if err != nil {
+		return nil, err
+	}
+	var exec BatchExecution
+	if err := client.request(http.MethodPost, batchPath(project, service), &exec, bytes.NewReader(payload)); err != nil {
+		return nil, err
+	}
+	return &exec, nil
+}
+
+// ListBatchExecutions lists a batch service's executions, newest first.
+func (client *Client) ListBatchExecutions(project, service string) ([]BatchExecution, error) {
+	var execs []BatchExecution
+	if err := client.request(http.MethodGet, batchPath(project, service), &execs, nil); err != nil {
+		return nil, err
+	}
+	return execs, nil
+}
+
+// InspectBatchExecution retrieves a single execution.
+func (client *Client) InspectBatchExecution(project, service, execution string) (*BatchExecution, error) {
+	var exec BatchExecution
+	path := batchPath(project, service) + "/" + execution
+	if err := client.request(http.MethodGet, path, &exec, nil); err != nil {
+		return nil, err
+	}
+	return &exec, nil
+}
+
+// CancelBatchExecution cancels a pending or running execution.
+func (client *Client) CancelBatchExecution(project, service, execution string) error {
+	var resp struct{}
+	path := batchPath(project, service) + "/" + execution + "/cancel"
+	return client.request(http.MethodPost, path, &resp, nil)
+}
+
+// StreamBatchExecutionLogs writes one execution's container output to w.
+//
+// Batch logs are addressed per execution rather than per service: a batch
+// service has no deployment for the service-wide endpoint to derive a label
+// from.
+func (client *Client) StreamBatchExecutionLogs(project, service, execution string, w io.Writer, follow bool) error {
+	path := batchPath(project, service) + "/" + execution + "/logs"
+	if follow {
+		path += "?follow"
+	}
+	return client.streamRequest(http.MethodGet, path, w)
+}
+
+// GetBatchConfig retrieves a batch service's configuration.
+func (client *Client) GetBatchConfig(project, service string) (*BatchConfig, error) {
+	var cfg BatchConfig
+	path := fmt.Sprintf("/projects/%s/services/%s/config", project, service)
+	if err := client.request(http.MethodGet, path, &cfg, nil); err != nil {
+		return nil, err
+	}
+	return &cfg, nil
+}
+
+// SetBatchConfig replaces a batch service's configuration.
+func (client *Client) SetBatchConfig(project, service string, cfg *BatchConfig) (*BatchConfig, error) {
+	payload, err := json.Marshal(cfg)
+	if err != nil {
+		return nil, err
+	}
+	var out BatchConfig
+	path := fmt.Sprintf("/projects/%s/services/%s/config", project, service)
+	if err := client.request(http.MethodPatch, path, &out, bytes.NewReader(payload)); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
 func (client *Client) ListSchedules(project, service string) ([]Schedule, error) {
 	var (
 		path      = fmt.Sprintf("/projects/%s/services/%s/schedules", project, service)
@@ -600,7 +719,11 @@ type DeployRequest struct {
 
 type BuildRequest struct {
 	Artifact string `json:"artifact"`
-	Build    struct {
+	// Kind is the service workload type. Empty means function. It must be
+	// repeated on every build for an existing batch service: the server treats
+	// an absent kind as function and answers 409 on a mismatch.
+	Kind  string `json:"kind,omitempty"`
+	Build struct {
 		Constructor string   `json:"constructor"`
 		Environment []KVPair `json:"environment"`
 	} `json:"build"`
