@@ -57,19 +57,14 @@ latest successful build is used.`,
 			if !batchRunFollow && !batchRunWait {
 				return nil
 			}
+			if batchRunFollow {
+				if err := followBatchOutput(client, cfg, exec.ID); err != nil {
+					fmt.Fprintf(os.Stderr, "could not read execution output: %v\n", err)
+				}
+			}
 			final, err := awaitBatchCompletion(client, cfg, exec.ID)
 			if err != nil {
 				return err
-			}
-			if batchRunFollow {
-				// Deliberately fetched after completion rather than streamed
-				// live. Batch containers routinely finish in under a second, so
-				// a tail started on "running" usually attaches to a log that is
-				// already closed and the stream ends before anything arrives.
-				// Waiting first makes the output deterministic.
-				if err := client.StreamBatchExecutionLogs(cfg.Project(), cfg.Service(), exec.ID, os.Stdout, false); err != nil {
-					fmt.Fprintf(os.Stderr, "could not read execution output: %v\n", err)
-				}
 			}
 			fmt.Printf("Execution %s %s (exit %d)\n", final.ID, colorize(final.Status), final.ExitCode)
 			if final.Status != "succeeded" {
@@ -160,7 +155,11 @@ latest successful build is used.`,
 			if err != nil {
 				return err
 			}
-			return client.StreamBatchExecutionLogs(cfg.Project(), cfg.Service(), args[0], os.Stdout, batchLogsFollow)
+			if batchLogsFollow {
+				return followBatchOutput(client, cfg, args[0])
+			}
+			_, err = client.ReadBatchExecutionLogs(cfg.Project(), cfg.Service(), args[0], 0, os.Stdout)
+			return err
 		}),
 	}
 
@@ -299,7 +298,11 @@ func shortID(id string) string {
 	return id
 }
 
-const batchPollInterval = 2 * time.Second
+const (
+	batchPollInterval = 2 * time.Second
+	// Log tailing polls faster than status, so output feels live.
+	batchLogPollInterval = 750 * time.Millisecond
+)
 
 func awaitBatchCompletion(client *api.Client, cfg config.ServiceConfig, id string) (*api.BatchExecution, error) {
 	for {
@@ -307,12 +310,63 @@ func awaitBatchCompletion(client *api.Client, cfg config.ServiceConfig, id strin
 		if err != nil {
 			return nil, err
 		}
-		switch exec.Status {
-		case "succeeded", "failed", "cancelled":
+		if isTerminalBatchStatus(exec.Status) {
 			return exec, nil
 		}
 		time.Sleep(batchPollInterval)
 	}
+}
+
+// followBatchOutput shows an execution's output as it is produced, returning
+// once the execution has finished and its output has been fully drained.
+//
+// It polls from a byte offset rather than holding a server-side follow open. The
+// server never closes a followed batch log, so a follower cannot tell when the
+// execution is done and simply hangs -- which it did. Polling puts the
+// termination condition where the answer actually lives: the execution's status.
+func followBatchOutput(client *api.Client, cfg config.ServiceConfig, id string) error {
+	offset := 0
+	for {
+		exec, err := client.InspectBatchExecution(cfg.Project(), cfg.Service(), id)
+		if err != nil {
+			return err
+		}
+		// A queued execution has no log yet, and asking for one is an error
+		// rather than an empty read.
+		if exec.Status != "pending" {
+			n, err := client.ReadBatchExecutionLogs(cfg.Project(), cfg.Service(), id, offset, os.Stdout)
+			offset += n
+			if err != nil && !isTerminalBatchStatus(exec.Status) {
+				// Transient while the container is still coming up.
+				time.Sleep(batchPollInterval)
+				continue
+			} else if err != nil {
+				return err
+			}
+		}
+		if isTerminalBatchStatus(exec.Status) {
+			// The status was read before the log, so anything written between
+			// the two reads is still outstanding.
+			n, err := client.ReadBatchExecutionLogs(cfg.Project(), cfg.Service(), id, offset, os.Stdout)
+			offset += n
+			if err != nil {
+				return err
+			}
+			if n == 0 {
+				return nil
+			}
+			continue
+		}
+		time.Sleep(batchLogPollInterval)
+	}
+}
+
+func isTerminalBatchStatus(status string) bool {
+	switch status {
+	case "succeeded", "failed", "cancelled":
+		return true
+	}
+	return false
 }
 
 func initBatchCmd() {
@@ -320,7 +374,7 @@ func initBatchCmd() {
 
 	batchRunCmd.Flags().StringVarP(&batchRunBuild, "build", "b", "", "Build to run (default: latest successful)")
 	batchRunCmd.Flags().StringArrayVarP(&batchRunEnv, "env", "e", nil, "Environment variable as KEY=VALUE, repeatable")
-	batchRunCmd.Flags().BoolVarP(&batchRunFollow, "follow", "f", false, "Wait for the execution to finish, then print its output")
+	batchRunCmd.Flags().BoolVarP(&batchRunFollow, "follow", "f", false, "Show the output as the execution runs, and wait for it to finish")
 	batchRunCmd.Flags().BoolVarP(&batchRunWait, "wait", "w", false, "Wait for the execution to finish and exit non-zero if it failed")
 	batchLogsCmd.Flags().BoolVarP(&batchLogsFollow, "follow", "f", false, "Follow the output")
 

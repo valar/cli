@@ -585,35 +585,27 @@ func (client *Client) CancelBatchExecution(project, service, execution string) e
 	return client.request(http.MethodPost, path, &resp, nil)
 }
 
-// StreamBatchExecutionLogs writes one execution's container output to w.
+// ReadBatchExecutionLogs writes an execution's output from byteOffset onward and
+// returns how many bytes it wrote.
 //
 // Batch logs are addressed per execution rather than per service: a batch
 // service has no deployment for the service-wide endpoint to derive a label
 // from.
 //
-// A followed stream reconnects and resumes at an exact byte offset, the same
-// way service logs do. It always starts from the beginning of the log, since an
-// execution's output is finite and usually short -- there is no reason to
-// anchor to the end and risk missing the first lines.
-func (client *Client) StreamBatchExecutionLogs(project, service, execution string, w io.Writer, follow bool) error {
-	base := batchPath(project, service) + "/" + execution + "/logs"
-	logPath := func(params url.Values) string {
-		if follow {
-			params.Set("follow", "true")
-			params.Set("keepalive", keepaliveInterval.String())
-		}
-		return base + "?" + params.Encode()
+// This is a plain read rather than a server-side follow. A followed stream is
+// never closed by the server when an execution's log completes, so a follower
+// has no way to learn it is done and hangs. Reading from an offset lets the
+// caller decide when to stop -- which for a batch execution is when the
+// execution itself reaches a terminal state.
+func (client *Client) ReadBatchExecutionLogs(project, service, execution string, byteOffset int, w io.Writer) (int, error) {
+	params := url.Values{"seek": {"start"}}
+	if byteOffset > 0 {
+		params.Set("offset", strconv.Itoa(byteOffset))
 	}
-	start := url.Values{"seek": {"start"}}
-	if !follow {
-		return client.streamOnce(logPath(start), w)
-	}
-	return client.follow(followOptions{path: func(resumeAfter int) string {
-		if resumeAfter == 0 {
-			return logPath(start)
-		}
-		return logPath(url.Values{"seek": {"start"}, "offset": {strconv.Itoa(resumeAfter)}})
-	}}, w)
+	path := batchPath(project, service) + "/" + execution + "/logs?" + params.Encode()
+	counter := &countingWriter{w: w}
+	err := client.streamOnce(path, counter)
+	return counter.bytes, err
 }
 
 // GetBatchConfig retrieves a batch service's configuration.
