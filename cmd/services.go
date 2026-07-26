@@ -78,19 +78,58 @@ var serviceListCmd = &cobra.Command{
 			return services[i].DeployedAt.Before(services[j].DeployedAt)
 		})
 		tw := tabwriter.NewWriter(os.Stdout, 0, 0, 1, ' ', 0)
-		fmt.Fprintln(tw, "NAME\tVERSION\tCREATED\tLAST DEPLOYED\tDOMAINS")
+		fmt.Fprintln(tw, "NAME\tKIND\tVERSION\tCREATED\tLAST DEPLOYED\tDOMAINS")
 		for _, svc := range services {
 			fmt.Fprintln(tw, strings.Join([]string{
 				svc.Name,
-				strconv.FormatInt(svc.Deployment, 10),
+				serviceKind(svc.Kind),
+				deployedVersion(svc),
 				humanize.Time(svc.CreatedAt),
-				humanize.Time(svc.DeployedAt),
+				lastDeployed(svc),
 				strings.Join(svc.Domains, " "),
 			}, "\t"))
 		}
 		tw.Flush()
 		return nil
 	}),
+}
+
+// serviceKind renders a service's workload type.
+//
+// Deliberately uncoloured. tabwriter measures cell width in bytes, so an ANSI
+// sequence makes a cell look ~9 characters wider than it prints and the whole
+// table skews -- which is already visible wherever colorize() is used inside a
+// tabwriter elsewhere in this CLI. A column of its own distinguishes the kinds
+// well enough without that cost.
+func serviceKind(kind string) string {
+	if kind == "" {
+		// A server predating the kind field. Reporting "function" would be a
+		// guess presented as fact.
+		return "-"
+	}
+	return kind
+}
+
+// deployedVersion renders the deployment version, or a dash when there is no
+// deployment to have a version.
+func deployedVersion(svc api.Service) string {
+	if !svc.Deployed() {
+		return "-"
+	}
+	return strconv.FormatInt(svc.Deployment, 10)
+}
+
+// lastDeployed renders the deployment time, or a dash when the service has
+// never been deployed.
+//
+// Humanising the zero timestamp yields "a long while ago", which reads as
+// deployed in the distant past. For a batch service that is not merely
+// imprecise: it is never deployed at all, by design.
+func lastDeployed(svc api.Service) string {
+	if !svc.Deployed() {
+		return "-"
+	}
+	return humanize.Time(svc.DeployedAt)
 }
 
 var (
