@@ -19,7 +19,21 @@ import (
 	"golang.org/x/crypto/ssh/terminal"
 )
 
-var buildService string
+var (
+	buildService  string
+	buildPushKind string
+)
+
+// validateServiceKind rejects a bad kind before uploading an artifact, since
+// the upload is what creates the service.
+func validateServiceKind(kind string) error {
+	switch kind {
+	case "", "function", "batch":
+		return nil
+	default:
+		return fmt.Errorf("unknown service kind %q, want \"function\" or \"batch\"", kind)
+	}
+}
 
 var buildCmd = &cobra.Command{
 	Use:     "build [--service service]",
@@ -388,13 +402,18 @@ var buildPushCmd = &cobra.Command{
 			return fmt.Errorf("package archive failed: %w", err)
 		}
 		defer targzFile.Close()
-		artifact, err := client.SubmitArtifact(serviceCfg.Project(), serviceCfg.Service(), targzFile)
+		if err := validateServiceKind(buildPushKind); err != nil {
+			return err
+		}
+		artifact, err := client.SubmitArtifact(serviceCfg.Project(), serviceCfg.Service(), buildPushKind, targzFile)
 		if err != nil {
 			return err
 		}
-		// Submit build request
+		// Submit build request. The kind is repeated here because the server
+		// reads an absent kind as "function" and rejects a mismatch with 409.
 		var buildReq api.BuildRequest
 		buildReq.Artifact = artifact.Artifact
+		buildReq.Kind = buildPushKind
 		buildReq.Build.Constructor = serviceCfg.Build().Constructor
 		for _, kv := range serviceCfg.Build().Environment {
 			buildReq.Build.Environment = append(buildReq.Build.Environment, api.KVPair(kv))
@@ -417,6 +436,7 @@ func initBuildsCmd() {
 	buildLogsCmd.PersistentFlags().BoolVarP(&logsFollow, "follow", "f", false, "Follow the logs")
 	buildLogsCmd.PersistentFlags().BoolVarP(&logsRaw, "raw", "r", false, "Dump the unformatted log content")
 	buildPushCmd.Flags().BoolVar(&buildPushNoDeploy, "no-deploy", false, "Only build, skip deploy action")
+	buildPushCmd.Flags().StringVar(&buildPushKind, "kind", "", `Workload type for a new service: "function" (default) or "batch"`)
 	buildCmd.AddCommand(buildListCmd, buildInspectCmd, buildLogsCmd, buildAbortCmd, buildStatusCmd, buildWatchCmd, buildPushCmd)
 	rootCmd.AddCommand(buildCmd)
 }
