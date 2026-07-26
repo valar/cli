@@ -590,12 +590,30 @@ func (client *Client) CancelBatchExecution(project, service, execution string) e
 // Batch logs are addressed per execution rather than per service: a batch
 // service has no deployment for the service-wide endpoint to derive a label
 // from.
+//
+// A followed stream reconnects and resumes at an exact byte offset, the same
+// way service logs do. It always starts from the beginning of the log, since an
+// execution's output is finite and usually short -- there is no reason to
+// anchor to the end and risk missing the first lines.
 func (client *Client) StreamBatchExecutionLogs(project, service, execution string, w io.Writer, follow bool) error {
-	path := batchPath(project, service) + "/" + execution + "/logs"
-	if follow {
-		path += "?follow"
+	base := batchPath(project, service) + "/" + execution + "/logs"
+	logPath := func(params url.Values) string {
+		if follow {
+			params.Set("follow", "true")
+			params.Set("keepalive", keepaliveInterval.String())
+		}
+		return base + "?" + params.Encode()
 	}
-	return client.streamRequest(http.MethodGet, path, w)
+	start := url.Values{"seek": {"start"}}
+	if !follow {
+		return client.streamOnce(logPath(start), w)
+	}
+	return client.follow(followOptions{path: func(resumeAfter int) string {
+		if resumeAfter == 0 {
+			return logPath(start)
+		}
+		return logPath(url.Values{"seek": {"start"}, "offset": {strconv.Itoa(resumeAfter)}})
+	}}, w)
 }
 
 // GetBatchConfig retrieves a batch service's configuration.
