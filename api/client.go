@@ -800,7 +800,18 @@ type Service struct {
 	CreatedAt  time.Time `json:"createdAt"`
 	DeployedAt time.Time `json:"deployedAt"`
 	Domains    []string  `json:"domains"`
+	// Kind is the workload type: "function" or "batch". Empty when talking to a
+	// server that predates the field, which is treated as "function".
+	Kind string `json:"kind"`
 }
+
+// IsBatch reports whether this is a batch service, for which the deployment and
+// domain columns are meaningless.
+func (s Service) IsBatch() bool { return s.Kind == "batch" }
+
+// Deployed reports whether the service has ever been deployed. A batch service
+// never is, and a function service may not have been yet.
+func (s Service) Deployed() bool { return !s.DeployedAt.IsZero() }
 
 type Build struct {
 	ID          string    `json:"id"`
