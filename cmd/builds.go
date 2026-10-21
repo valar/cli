@@ -16,7 +16,7 @@ import (
 	"github.com/valar/cli/api"
 	"github.com/valar/cli/config"
 	"github.com/valar/cli/util"
-	"golang.org/x/crypto/ssh/terminal"
+	"golang.org/x/term"
 )
 
 var (
@@ -112,6 +112,12 @@ func formatLogEntry(logEntry *api.LogEntry, terminalWidth int) string {
 	line.WriteString(color.HiBlackString(string(timestampPrefix)))
 	line.WriteString(colorWrapper(string(contextPrefix)))
 
+	// Without a known width (e.g. output is not a terminal) don't wrap at all.
+	if terminalWidth <= 0 {
+		line.WriteString(colorWrapper(logEntry.Content))
+		return line.String()
+	}
+
 	contentRunes := []rune(logEntry.Content)
 	runeBlockLen := max(1, terminalWidth-len(timestampPrefix)-len(contextPrefix))
 	for i := 0; i <= len(contentRunes)/runeBlockLen; i++ {
@@ -152,7 +158,7 @@ var buildLogsCmd = &cobra.Command{
 			return fmt.Errorf("no builds available")
 		}
 		// Sort builds by date
-		width, _, _ := terminal.GetSize(0)
+		width, _, _ := term.GetSize(int(os.Stdout.Fd()))
 		sort.Slice(builds, func(i, j int) bool { return builds[i].CreatedAt.After(builds[j].CreatedAt) })
 		latestBuildID := builds[0].ID
 		consumer := func(le api.LogEntry) {
@@ -198,8 +204,15 @@ var buildWatchCmd = &cobra.Command{
 		sort.Slice(builds, func(i, j int) bool { return builds[i].CreatedAt.After(builds[j].CreatedAt) })
 		latestBuildID := builds[0].ID
 
-		terminalWidth, terminalHeight, _ := terminal.GetSize(0)
-		bar := progressbar.NewOptions(-1, progressbar.OptionEnableColorCodes(true), progressbar.OptionSpinnerType(3), progressbar.OptionSetElapsedTime(false), progressbar.OptionSetMaxDetailRow(terminalHeight-2), progressbar.OptionFullWidth())
+		if !term.IsTerminal(int(os.Stdout.Fd())) {
+			return watchBuildPlain(client, cfg, latestBuildID)
+		}
+
+		terminalWidth, terminalHeight, err := term.GetSize(int(os.Stdout.Fd()))
+		if err != nil {
+			return watchBuildPlain(client, cfg, latestBuildID)
+		}
+		bar := progressbar.NewOptions(-1, progressbar.OptionEnableColorCodes(true), progressbar.OptionSpinnerType(3), progressbar.OptionSetElapsedTime(false), progressbar.OptionSetMaxDetailRow(max(1, terminalHeight-2)), progressbar.OptionFullWidth())
 		build, err := client.InspectBuild(cfg.Project(), cfg.Service(), latestBuildID)
 		if err != nil {
 			return err
@@ -243,6 +256,29 @@ var buildWatchCmd = &cobra.Command{
 
 		return nil
 	}),
+}
+
+// watchBuildPlain streams the build logs line by line without any cursor
+// movement, for when stdout is not a terminal (CI, pipes, redirects).
+func watchBuildPlain(client *api.Client, cfg config.ServiceConfig, buildID string) error {
+	if err := client.StreamBuildLogs(cfg.Project(), cfg.Service(), buildID, func(le api.LogEntry) {
+		fmt.Println(formatLogEntry(&le, 0))
+	}); err != nil {
+		return fmt.Errorf("streaming build logs: %w", err)
+	}
+	build, err := client.InspectBuild(cfg.Project(), cfg.Service(), buildID)
+	if err != nil {
+		return err
+	}
+	switch build.Status {
+	case "done":
+		fmt.Println("Build has succeeded.")
+	case "failed":
+		fmt.Println("Build has failed.")
+	default:
+		fmt.Printf("Build is %s.\n", build.Status)
+	}
+	return nil
 }
 
 var buildInspectCmd = &cobra.Command{
