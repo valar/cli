@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"sort"
 	"strconv"
@@ -43,7 +44,11 @@ var deploymentListCmd = &cobra.Command{
 var deploymentCreateCmd = &cobra.Command{
 	Use:   "create [build]",
 	Short: "Deploy the build with the fully given ID.",
-	Args:  cobra.ExactArgs(1),
+	Long: `Deploy the build with the fully given ID.
+
+Without a build, redeploy the build of the latest active deployment with the
+service's current runtime variables, for example after 'valar env set'.`,
+	Args: cobra.MaximumNArgs(1),
 	Run: runAndHandle(func(cmd *cobra.Command, args []string) error {
 		cfg, err := config.NewServiceConfigWithFallback(functionConfiguration, &deploymentService, globalConfiguration)
 		if err != nil {
@@ -53,16 +58,28 @@ var deploymentCreateCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		return deployBuild(client, cfg, args[0])
+		build := ""
+		if len(args) > 0 {
+			build = args[0]
+		}
+		return deployBuild(client, cfg, build, os.Stdout)
 	}),
 }
 
-var rollbackDelta int
+var (
+	rollbackDelta int
+	rollbackEnv   string
+)
 
 var deploymentRollbackCmd = &cobra.Command{
 	Use:   "rollback",
 	Short: "Reverse service to the previous deployment.",
-	Args:  cobra.NoArgs,
+	Long: `Reverse service to the previous deployment.
+
+With --env pinned, the default, the new deployment gets the environment the
+earlier one ran with; the command then names the variables whose values differ
+from the current ones. With --env current, it gets the current variables.`,
+	Args: cobra.NoArgs,
 	Run: runAndHandle(func(cmd *cobra.Command, args []string) error {
 		cfg, err := config.NewServiceConfigWithFallback(functionConfiguration, &deploymentService, globalConfiguration)
 		if err != nil {
@@ -72,30 +89,50 @@ var deploymentRollbackCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		return rollbackLatestDeployment(client, cfg)
+		return rollbackLatestDeployment(client, cfg, rollbackDelta, rollbackEnv, os.Stdout, os.Stderr)
 	}),
 }
 
-func rollbackLatestDeployment(client *api.Client, cfg config.ServiceConfig) error {
+// rollbackLatestDeployment prints the new version to stdout and notes to stderr.
+func rollbackLatestDeployment(client *api.Client, cfg config.ServiceConfig, delta int, env string, stdout, stderr io.Writer) error {
+	switch env {
+	case api.RollbackEnvPinned:
+	case api.RollbackEnvCurrent:
+		// A server without the environment API ignores the field and rolls
+		// back with the pinned environment.
+		ok, err := client.HasEnvAPI(cfg.Project(), cfg.Service())
+		if err != nil {
+			return err
+		}
+		if !ok {
+			return fmt.Errorf("--env current needs Valar platform %s or newer with the environment API enabled", api.EnvMinPlatform)
+		}
+	default:
+		return fmt.Errorf("unknown --env %q, want %q or %q", env, api.RollbackEnvPinned, api.RollbackEnvCurrent)
+	}
 	deployments, err := client.ListDeployments(cfg.Project(), cfg.Service())
 	if err != nil {
 		return err
 	}
-	if len(deployments) < rollbackDelta+1 {
+	if len(deployments) < delta+1 {
 		return fmt.Errorf("not enough deployments available")
 	}
 	// Sort by version (desc)
 	sort.Slice(deployments, func(i, j int) bool {
 		return deployments[i].Version > deployments[j].Version
 	})
-	// Get targeted version identifier
-	deployment, err := client.RollbackDeploy(cfg.Project(), cfg.Service(), &api.RollbackRequest{
-		Version: deployments[rollbackDelta].Version,
+	target := deployments[delta].Version
+	result, err := client.RollbackDeploy(cfg.Project(), cfg.Service(), &api.RollbackRequest{
+		Version:     target,
+		Environment: env,
 	})
 	if err != nil {
 		return err
 	}
-	fmt.Println(deployment.Version)
+	fmt.Fprintln(stdout, result.Version)
+	if len(result.Changed) > 0 {
+		fmt.Fprintf(stderr, "The environment of version %d differs from the current one in %s.\n", target, strings.Join(result.Changed, ", "))
+	}
 	return nil
 }
 
@@ -125,6 +162,7 @@ func listDeployments(client *api.Client, cfg config.ServiceConfig) error {
 
 func initDeploymentsCmd() {
 	deploymentRollbackCmd.Flags().IntVarP(&rollbackDelta, "delta", "d", 1, "Number of deployments to roll back")
+	deploymentRollbackCmd.Flags().StringVar(&rollbackEnv, "env", api.RollbackEnvPinned, "Environment of the new deployment (pinned|current)")
 	deploymentCmd.PersistentFlags().StringVarP(&deploymentService, "service", "s", "", "The service to manage")
 	deploymentCmd.AddCommand(deploymentListCmd, deploymentRollbackCmd, deploymentCreateCmd)
 	rootCmd.AddCommand(deploymentCmd)
