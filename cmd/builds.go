@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"sort"
 	"strings"
@@ -367,18 +368,51 @@ func inspectBuild(client *api.Client, cfg config.ServiceConfig, id string) error
 	return nil
 }
 
-func deployBuild(client *api.Client, cfg config.ServiceConfig, id string) error {
-	var deployReq api.DeployRequest
-	deployReq.Build = id
-	for _, kv := range cfg.Deployment().Environment {
-		deployReq.Environment = append(deployReq.Environment, api.KVPair(kv))
+// deployBuild deploys a build, or without one redeploys the active build with
+// the current environment.
+func deployBuild(client *api.Client, cfg *config.ValidatedServiceConfig, id string, w io.Writer) error {
+	hasEnvAPI, err := client.HasEnvAPI(cfg.Project(), cfg.Service())
+	if err != nil {
+		return err
+	}
+	deployReq := api.DeployRequest{Build: id}
+	switch {
+	case hasEnvAPI:
+		warnInlineEnvironment(cfg.Unwrap())
+	case id == "":
+		return fmt.Errorf("deploying without a build needs Valar platform %s or newer with the environment API enabled", api.EnvMinPlatform)
+	default:
+		deployReq.Environment = inlineList(cfg.Deployment().Environment)
 	}
 	deployment, err := client.SubmitDeploy(cfg.Project(), cfg.Service(), &deployReq)
 	if err != nil {
 		return err
 	}
-	fmt.Println(deployment.Version)
+	fmt.Fprintln(w, deployment.Version)
 	return nil
+}
+
+// newBuildRequest carries the inline lists of .valar.yml only for servers that
+// do not store the environment themselves.
+func newBuildRequest(cfg *config.ValidatedServiceConfig, artifact, kind string, skipDeploy, inline bool) *api.BuildRequest {
+	var buildReq api.BuildRequest
+	buildReq.Artifact = artifact
+	buildReq.Kind = kind
+	buildReq.Build.Constructor = cfg.Build().Constructor
+	buildReq.Deployment.Skip = skipDeploy
+	if inline {
+		buildReq.Build.Environment = inlineList(cfg.Build().Environment)
+		buildReq.Deployment.Environment = inlineList(cfg.Deployment().Environment)
+	}
+	return &buildReq
+}
+
+func inlineList(list []config.EnvironmentConfig) []api.KVPair {
+	var kvs []api.KVPair
+	for _, kv := range list {
+		kvs = append(kvs, api.KVPair(kv))
+	}
+	return kvs
 }
 
 func statusToExitCode(status string) int {
@@ -441,24 +475,21 @@ var buildPushCmd = &cobra.Command{
 		if err := validateServiceKind(buildPushKind); err != nil {
 			return err
 		}
+		hasEnvAPI, err := client.HasEnvAPI(serviceCfg.Project(), serviceCfg.Service())
+		if err != nil {
+			return err
+		}
+		if hasEnvAPI {
+			warnInlineEnvironment(serviceCfg.Unwrap())
+		}
 		artifact, err := client.SubmitArtifact(serviceCfg.Project(), serviceCfg.Service(), buildPushKind, targzFile)
 		if err != nil {
 			return err
 		}
-		// Submit build request. The kind is repeated here because the server
-		// reads an absent kind as "function" and rejects a mismatch with 409.
-		var buildReq api.BuildRequest
-		buildReq.Artifact = artifact.Artifact
-		buildReq.Kind = buildPushKind
-		buildReq.Build.Constructor = serviceCfg.Build().Constructor
-		for _, kv := range serviceCfg.Build().Environment {
-			buildReq.Build.Environment = append(buildReq.Build.Environment, api.KVPair(kv))
-		}
-		buildReq.Deployment.Skip = buildPushNoDeploy
-		for _, kv := range serviceCfg.Deployment().Environment {
-			buildReq.Deployment.Environment = append(buildReq.Deployment.Environment, api.KVPair(kv))
-		}
-		build, err := client.SubmitBuild(serviceCfg.Project(), serviceCfg.Service(), &buildReq)
+		// The kind is repeated here because the server reads an absent kind as
+		// "function" and rejects a mismatch with 409.
+		buildReq := newBuildRequest(serviceCfg, artifact.Artifact, buildPushKind, buildPushNoDeploy, !hasEnvAPI)
+		build, err := client.SubmitBuild(serviceCfg.Project(), serviceCfg.Service(), buildReq)
 		if err != nil {
 			return err
 		}

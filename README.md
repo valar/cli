@@ -149,31 +149,54 @@ valar deployment list
 valar deployment create [buildid]
 ```
 
+Without a build ID, the build of the latest active deployment is redeployed with the service's current runtime variables.
+
 #### Reverse service to the previous deployment
 
 ```bash
-valar deployment rollback [--delta 1]
+valar deployment rollback [--delta 1] [--env pinned|current]
 ```
+
+With `--env pinned` (the default) the new deployment gets the environment the earlier deployment ran with, and the command names the variables whose values differ from the current ones. With `--env current` it gets the current variables.
 
 ### Environment variables
 
-#### Set a variable
+Variables are stored by Valar per service and target: `runtime` variables reach deployments and batch executions, `build` variables reach builds. The commands below act on runtime variables; pass `--build` for build variables or `--all` for both. Secret values are write-only and never shown again. These commands need Valar platform 2.9.0 or newer.
+
+#### Set variables
 
 ```bash
-valar env set [--build] [--secret] [key]=[value]
+valar env set [--build|--all] [--secret] [key]=[value]...
+valar env set [--build|--all] [--secret] [key] < value-file
 ```
 
-#### Delete a variable
+Given only a key, the value is read from standard input, or prompted for without echo. Prefer that for secrets, since arguments end up in shell history.
+
+#### Remove variables
 
 ```bash
-valar env delete [--build] [key]
+valar env unset [--build|--all] [key]...
 ```
 
 #### List variables
 
 ```bash
-valar env [--build] [--format=(table|raw)]
+valar env list [--build|--all] [--format=(table|raw)]
 ```
+
+#### Show the change log
+
+```bash
+valar env history [--build|--all]
+```
+
+#### Move variables from `.valar.yml` to Valar
+
+```bash
+valar env import
+```
+
+Older versions kept variables in the `environment` lists of `.valar.yml` and sent them with every push. `valar env import` stores the plain entries as variables, unless they were changed on the service since, names the secrets that have to be set again with `valar env set --secret`, and empties the lists. Pushes no longer send the lists.
 
 ### Domains
 

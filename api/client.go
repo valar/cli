@@ -15,10 +15,15 @@ import (
 
 type JSONError struct {
 	Err string `json:"error"`
+	// Names lists the variables an environment error concerns.
+	Names []string `json:"names,omitempty"`
 }
 
 func (err JSONError) Error() string {
-	return err.Err
+	if len(err.Names) == 0 {
+		return err.Err
+	}
+	return err.Err + ": " + strings.Join(err.Names, ", ")
 }
 
 type Client struct {
@@ -59,6 +64,10 @@ type Error struct {
 
 func (err Error) Error() string {
 	return fmt.Sprintf("%s: %v", http.StatusText(err.StatusCode), err.ServerError)
+}
+
+func (err Error) Unwrap() error {
+	return err.ServerError
 }
 
 func parseErrorResponse(body []byte) error {
@@ -392,28 +401,16 @@ func (client *Client) SubmitDeploy(project, service string, deploy *DeployReques
 }
 
 // RollbackDeploy rolls back to a previous deployment.
-func (client *Client) RollbackDeploy(project, service string, rollback *RollbackRequest) (*Deployment, error) {
+func (client *Client) RollbackDeploy(project, service string, rollback *RollbackRequest) (*RollbackResult, error) {
 	var (
 		payload, _ = json.Marshal(rollback)
-		depl       Deployment
+		result     RollbackResult
 		path       = fmt.Sprintf("/projects/%s/services/%s/deploys/rollback", project, service)
 	)
-	if err := client.request(http.MethodPost, path, &depl, bytes.NewReader(payload)); err != nil {
+	if err := client.request(http.MethodPost, path, &result, bytes.NewReader(payload)); err != nil {
 		return nil, err
 	}
-	return &depl, nil
-}
-
-func (client *Client) EncryptEnvironment(project, service string, kvpair *KVPair) (*KVPair, error) {
-	var (
-		payload, _ = json.Marshal(kvpair)
-		encrypted  KVPair
-		path       = fmt.Sprintf("/projects/%s/environment/encrypt", project)
-	)
-	if err := client.request(http.MethodPost, path, &encrypted, bytes.NewReader(payload)); err != nil {
-		return nil, err
-	}
-	return &encrypted, nil
+	return &result, nil
 }
 
 func (client *Client) ListDomains(project string) ([]Domain, error) {
@@ -516,9 +513,12 @@ type BatchExecution struct {
 	Status      string            `json:"status"`
 	Args        []string          `json:"args"`
 	Environment map[string]string `json:"environment"`
-	Error       string            `json:"error"`
-	ExitCode    int32             `json:"exitCode"`
-	Attempts    int32             `json:"attempts"`
+	// Parameters names the request's variables on servers that no longer
+	// return their values.
+	Parameters []string `json:"parameters"`
+	Error      string   `json:"error"`
+	ExitCode   int32    `json:"exitCode"`
+	Attempts   int32    `json:"attempts"`
 	// BlockedGate names the admission gate that last refused this execution.
 	// Empty on a pending execution means it is simply queued behind others
 	// rather than blocked on capacity.
@@ -706,17 +706,36 @@ type Domain struct {
 	Service    *string   `json:"service"`
 }
 
+// Rollback environments: pinned reuses the target deployment's values,
+// current the service's current set.
+const (
+	RollbackEnvPinned  = "pinned"
+	RollbackEnvCurrent = "current"
+)
+
 type RollbackRequest struct {
-	Version int64 `json:"version"`
+	Version     int64  `json:"version"`
+	Environment string `json:"environment,omitempty"`
+}
+
+type RollbackResult struct {
+	Deployment
+	// Changed names the variables whose rolled-back value differs from the
+	// current set. Servers without the environment API leave it empty.
+	Changed []string `json:"changed"`
 }
 
 type Artifact struct {
 	Artifact string `json:"artifact"`
 }
 
+// DeployRequest deploys a build. An empty Build redeploys the build of the
+// latest active deployment with the current environment.
 type DeployRequest struct {
-	Build       string   `json:"build,omitempty"`
-	Environment []KVPair `json:"environment"`
+	Build string `json:"build,omitempty"`
+	// Environment is an inline list, sent only to servers without the
+	// environment API.
+	Environment []KVPair `json:"environment,omitempty"`
 }
 
 type BuildRequest struct {
@@ -727,14 +746,15 @@ type BuildRequest struct {
 	Kind  string `json:"kind,omitempty"`
 	Build struct {
 		Constructor string   `json:"constructor"`
-		Environment []KVPair `json:"environment"`
+		Environment []KVPair `json:"environment,omitempty"`
 	} `json:"build"`
 	Deployment struct {
 		Skip        bool     `json:"skip"`
-		Environment []KVPair `json:"environment"`
+		Environment []KVPair `json:"environment,omitempty"`
 	} `json:"deployment"`
 }
 
+// KVPair is an entry of an inline environment list.
 type KVPair struct {
 	Key    string `json:"key"`
 	Value  string `json:"value"`

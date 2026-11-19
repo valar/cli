@@ -135,6 +135,9 @@ latest successful build is used.`,
 			for key, value := range exec.Environment {
 				fmt.Fprintf(tw, "Env:\t%s=%s\n", key, value)
 			}
+			if len(exec.Parameters) > 0 {
+				fmt.Fprintf(tw, "Parameters:\t%s\n", strings.Join(exec.Parameters, ", "))
+			}
 			if exec.BlockedGate != "" {
 				fmt.Fprintf(tw, "Blocked by:\t%s\n", batchGateReason(exec.BlockedGate))
 			}
