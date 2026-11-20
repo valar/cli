@@ -123,15 +123,21 @@ func NewServiceConfigFromFile(path string) (*ValidatedServiceConfig, error) {
 	return &ValidatedServiceConfig{yaml: cfg}, nil
 }
 
+// NewServiceConfigWithFallback reads the service configuration at path, or
+// falls back to the CLI's project. VALAR_PROJECT overrides the project and a
+// non-empty service the service; the build and deployment sections stay.
 func NewServiceConfigWithFallback(path string, service *string, cli *CLIConfig) (*ValidatedServiceConfig, error) {
 	cfg := ServiceConfigYAML{}
 	if err := cfg.ReadFromFile(path); errors.Is(err, os.ErrNotExist) {
-		if service == nil {
-			return &ValidatedServiceConfig{ServiceConfigYAML{Project: cli.Project()}}, nil
-		}
-		return &ValidatedServiceConfig{ServiceConfigYAML{Project: cli.Project(), Service: *service}}, nil
-	} else if err == nil && service != nil && len(*service) > 0 {
-		return &ValidatedServiceConfig{ServiceConfigYAML{Project: cfg.Project, Service: *service}}, nil
+		cfg = ServiceConfigYAML{Project: cli.Project()}
+	} else if err != nil {
+		return nil, err
+	}
+	if cli.env.Project != "" {
+		cfg.Project = cli.env.Project
+	}
+	if service != nil && *service != "" {
+		cfg.Service = *service
 	}
 	return &ValidatedServiceConfig{yaml: cfg}, nil
 }

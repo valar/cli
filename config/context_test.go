@@ -1,0 +1,152 @@
+package config_test
+
+import (
+	"io"
+	"os"
+	"path/filepath"
+	"testing"
+
+	"github.com/valar/cli/config"
+)
+
+func clearEnv(t *testing.T) {
+	t.Helper()
+	for _, name := range []string{config.EnvToken, config.EnvEndpoint, config.EnvProject, "VALARCONFIG"} {
+		t.Setenv(name, "")
+		os.Unsetenv(name)
+	}
+}
+
+func writeFile(t *testing.T, dir, name, content string) string {
+	t.Helper()
+	path := filepath.Join(dir, name)
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
+
+const fileConfig = `activeContext: default
+endpoints:
+  default:
+    token: file-token
+    url: https://valar.example/v2
+contexts:
+  default:
+    endpoint: default
+    project: fileproject
+`
+
+func TestCLIConfig_EnvironmentOverridesContext(t *testing.T) {
+	clearEnv(t)
+	t.Setenv("VALARCONFIG", writeFile(t, t.TempDir(), "config", fileConfig))
+	t.Setenv(config.EnvToken, "env-token")
+	t.Setenv(config.EnvProject, "envproject")
+
+	cfg, err := config.NewCLIConfigFromEnvironment()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := cfg.Token(); got != "env-token" {
+		t.Errorf("Token() = %q, want env-token", got)
+	}
+	if got := cfg.Project(); got != "envproject" {
+		t.Errorf("Project() = %q, want envproject", got)
+	}
+	if got := cfg.Endpoint(); got != "https://valar.example/v2" {
+		t.Errorf("Endpoint() = %q, want the configured one", got)
+	}
+
+	t.Setenv(config.EnvEndpoint, "https://self.hosted/v2")
+	cfg, err = config.NewCLIConfigFromEnvironment()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := cfg.Endpoint(); got != "https://self.hosted/v2" {
+		t.Errorf("Endpoint() = %q, want VALAR_ENDPOINT", got)
+	}
+}
+
+func TestCLIConfig_TokenWithoutConfigFile(t *testing.T) {
+	clearEnv(t)
+	t.Setenv("HOME", t.TempDir())
+	t.Setenv(config.EnvToken, "env-token")
+
+	stderr := captureStderr(t, func() {
+		cfg, err := config.NewCLIConfigFromEnvironment()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got := cfg.Endpoint(); got != config.DefaultEndpoint {
+			t.Errorf("Endpoint() = %q, want %q", got, config.DefaultEndpoint)
+		}
+	})
+	if stderr != "" {
+		t.Errorf("a missing default config file printed %q", stderr)
+	}
+}
+
+func TestServiceConfig_ServiceOverrideKeepsBuild(t *testing.T) {
+	clearEnv(t)
+	t.Setenv("VALARCONFIG", writeFile(t, t.TempDir(), "config", fileConfig))
+	dir := t.TempDir()
+	writeFile(t, dir, ".valar.yml", "project: p\nservice: web\nbuild:\n  constructor: static\ndeployment: {}\n")
+	t.Chdir(dir)
+
+	cli, err := config.NewCLIConfigFromEnvironment()
+	if err != nil {
+		t.Fatal(err)
+	}
+	preview := "webpr12"
+	cfg, err := config.NewServiceConfigWithFallback(".valar.yml", &preview, cli)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Project() != "p" || cfg.Service() != "webpr12" || cfg.Build().Constructor != "static" {
+		t.Errorf("got project %q, service %q, constructor %q", cfg.Project(), cfg.Service(), cfg.Build().Constructor)
+	}
+
+	t.Setenv(config.EnvProject, "q")
+	cli, err = config.NewCLIConfigFromEnvironment()
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg, err = config.NewServiceConfigWithFallback(".valar.yml", nil, cli)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Project() != "q" || cfg.Service() != "web" {
+		t.Errorf("got project %q, service %q, want q and web", cfg.Project(), cfg.Service())
+	}
+}
+
+func TestServiceConfig_BrokenFileIsAnError(t *testing.T) {
+	clearEnv(t)
+	t.Setenv("VALARCONFIG", writeFile(t, t.TempDir(), "config", fileConfig))
+	dir := t.TempDir()
+	writeFile(t, dir, ".valar.yml", "project: [unclosed\n")
+	t.Chdir(dir)
+
+	cli, err := config.NewCLIConfigFromEnvironment()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := config.NewServiceConfigWithFallback(".valar.yml", nil, cli); err == nil {
+		t.Error("a malformed .valar.yml was accepted")
+	}
+}
+
+func captureStderr(t *testing.T, f func()) string {
+	t.Helper()
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	orig := os.Stderr
+	os.Stderr = w
+	defer func() { os.Stderr = orig }()
+	f()
+	w.Close()
+	out, _ := io.ReadAll(r)
+	return string(out)
+}

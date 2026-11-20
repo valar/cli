@@ -26,6 +26,12 @@ valar config init --token=[your-api-token] --project=[your-project]
 
 By default, Valar uses the default valarconfig file in `$HOME/.valar/config`. If the `VALARCONFIG` environment variable does exist, `valar` uses an effective configuration that is the result of merging the files listed in the `VALARCONFIG` variable.
 
+`VALAR_TOKEN`, `VALAR_ENDPOINT` and `VALAR_PROJECT` take precedence over the active context and the project in `.valar.yml`, so CI needs no configuration file. Without a configured endpoint, `VALAR_TOKEN` talks to `https://api.valar.dev/v2`.
+
+```bash
+VALAR_TOKEN=... valar build push --wait
+```
+
 ### Configuration
 
 #### Initialize configuration
@@ -133,7 +139,17 @@ valar service list
 valar service logs [--follow] [--tail] [--skip n] [service]
 ```
 
+#### Print a service's URLs
+
+Linked custom domains come first, then the service's own `<project>-<service>` domains.
+
+```bash
+valar service url [--service service]
+```
+
 #### Enable a service
+
+Right after a disable, this waits until the old instances have stopped.
 
 ```bash
 valar service enable [--service service]
@@ -252,8 +268,10 @@ valar domains delete [domain]
 #### Pushing a new build
 
 ```bash
-valar builds push [--no-deploy]
+valar builds push [--no-deploy] [--service service] [--wait [--timeout 30m]]
 ```
+
+`push` prints the build ID. With `--wait` it also streams the build log to stderr, waits for the build and its deployment, and exits non-zero if either fails. `--service` pushes to another service than the one in `.valar.yml`, with the same build settings.
 
 #### Listing all builds
 
@@ -286,6 +304,8 @@ valar builds logs [--follow] [--raw] [optional buildid]
 ```
 
 #### Watch the build and status until its completed
+
+Exits non-zero if the build fails.
 
 ```bash
 valar builds watch [optional buildid]
