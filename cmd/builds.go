@@ -523,6 +523,12 @@ var buildPushCmd = &cobra.Command{
 		if err := validateServiceKind(buildPushKind); err != nil {
 			return err
 		}
+		constructor := serviceCfg.Build().Constructor
+		if constructor == "" {
+			if constructor, err = detectConstructor(folder, os.Stderr); err != nil {
+				return err
+			}
+		}
 		hasEnvAPI, err := client.HasEnvAPI(serviceCfg.Project(), serviceCfg.Service())
 		if err != nil {
 			return err
@@ -537,6 +543,7 @@ var buildPushCmd = &cobra.Command{
 		// The kind is repeated here because the server reads an absent kind as
 		// "function" and rejects a mismatch with 409.
 		buildReq := newBuildRequest(serviceCfg, artifact.Artifact, buildPushKind, buildPushNoDeploy, !hasEnvAPI)
+		buildReq.Build.Constructor = constructor
 		build, err := client.SubmitBuild(serviceCfg.Project(), serviceCfg.Service(), buildReq)
 		if err != nil {
 			return err
