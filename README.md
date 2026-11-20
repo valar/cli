@@ -445,3 +445,7 @@ valar cron trigger [name] [--service service]
 ```bash
 valar cron inspect [name] [--service service]
 ```
+
+## Agent skill
+
+`skills/valar/SKILL.md` teaches coding agents to deploy and operate Valar services with this CLI: setup through environment variables, `--json` output, exit codes, the deploy flow and the app's contract. Install it the way your agent loads skills, for example by copying the `skills/valar` folder into the agent's skills directory.
