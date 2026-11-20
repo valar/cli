@@ -41,23 +41,31 @@ func TestCreateProject_SurfacesServerError(t *testing.T) {
 
 func TestDeleteProject(t *testing.T) {
 	for _, tc := range []struct {
-		Name    string
-		Status  int
-		Body    string
-		WantErr string
+		Name      string
+		Cascade   bool
+		Status    int
+		Body      string
+		WantQuery string
+		WantErr   string
 	}{
-		{"Deleted", http.StatusOK, `{"status":"ok"}`, ""},
-		{"NotEmpty", http.StatusConflict, `{"error":"only empty projects can be deleted, and this one has services"}`,
+		{"Deleted", false, http.StatusOK, `{"status":"ok"}`, "", ""},
+		{"NotEmpty", false, http.StatusConflict, `{"error":"only empty projects can be deleted, and this one has services"}`, "",
 			"Conflict: only empty projects can be deleted, and this one has services"},
+		{"Cascade", true, http.StatusOK, `{"status":"ok"}`, "cascade=true", ""},
 	} {
 		t.Run(tc.Name, func(t *testing.T) {
+			var query string
 			client, requests := newEnvTestServer(t, func(w http.ResponseWriter, r *http.Request) {
+				query = r.URL.RawQuery
 				w.WriteHeader(tc.Status)
 				w.Write([]byte(tc.Body))
 			})
-			err := client.DeleteProject("demo")
+			err := client.DeleteProject("demo", tc.Cascade)
 			if want := (recordedRequest{http.MethodDelete, "/projects/demo", ""}); (*requests)[0] != want {
 				t.Errorf("request %+v, want %+v", (*requests)[0], want)
+			}
+			if query != tc.WantQuery {
+				t.Errorf("query = %q, want %q", query, tc.WantQuery)
 			}
 			switch {
 			case tc.WantErr == "" && err != nil:
@@ -66,5 +74,15 @@ func TestDeleteProject(t *testing.T) {
 				t.Errorf("error = %v, want %q", err, tc.WantErr)
 			}
 		})
+	}
+}
+
+func TestDeleteService(t *testing.T) {
+	client, requests := newEnvTestServer(t, func(w http.ResponseWriter, r *http.Request) {})
+	if err := client.DeleteService("demo", "web"); err != nil {
+		t.Fatalf("DeleteService: %v", err)
+	}
+	if want := (recordedRequest{http.MethodDelete, "/projects/demo/services/web", ""}); (*requests)[0] != want {
+		t.Errorf("request %+v, want %+v", (*requests)[0], want)
 	}
 }

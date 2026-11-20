@@ -140,10 +140,10 @@ A project name is 3 to 20 lowercase letters or digits and starts with a letter. 
 #### Delete a project
 
 ```bash
-valar projects delete [--yes] [project-name]
+valar projects delete [--yes] [--cascade] [project-name]
 ```
 
-Only empty projects can be deleted: a project with services, domains or key-value storage is refused. The command asks you to type the project name to confirm; `--yes` skips that.
+Without `--cascade`, only empty projects can be deleted: a project with services, domains or key-value storage is refused. With `--cascade`, the project's services are deleted first, then its domain claims. The command asks you to type the project name to confirm; `--yes` skips that. With `--cascade` and no terminal to ask on, it refuses unless `--yes` is given.
 
 > [!CAUTION]
 > Deleting a project retires its name for good. No one can create a project with that name again, not even you.
@@ -206,6 +206,14 @@ valar service enable [--service service]
 ```bash
 valar service disable [--service service]
 ```
+
+#### Delete a service
+
+```bash
+valar service delete [--yes] [service]
+```
+
+Deletes the service with its builds, deployments, batch executions, environment, secrets, schedules and permission rules. Its linked domains are unlinked; the project keeps their claims. The service defaults to the one in `.valar.yml`. The command asks you to type the service name to confirm; `--yes` skips that, and without a terminal it refuses unless `--yes` is given. If a deletion fails, the service stays disabled and running the command again finishes it.
 
 #### Listing all deployments of a service
 

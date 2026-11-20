@@ -26,7 +26,13 @@ func (client *Client) CreateProject(name string, public bool) (*Project, error) 
 	return &project, nil
 }
 
-// DeleteProject deletes an empty project. The platform retires its name for good.
-func (client *Client) DeleteProject(name string) error {
-	return client.request(http.MethodDelete, "/projects/"+name, nil, nil)
+// DeleteProject deletes a project and retires its name for good. Without
+// cascade the project must be empty; with it, its services and domain claims
+// are deleted first.
+func (client *Client) DeleteProject(name string, cascade bool) error {
+	path := "/projects/" + name
+	if cascade {
+		path += "?cascade=true"
+	}
+	return client.request(http.MethodDelete, path, nil, nil)
 }

@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"bufio"
 	"fmt"
 	"io"
 	"os"
@@ -15,8 +14,9 @@ import (
 )
 
 var (
-	projectsCreatePublic bool
-	projectsDeleteYes    bool
+	projectsCreatePublic  bool
+	projectsDeleteYes     bool
+	projectsDeleteCascade bool
 )
 
 var (
@@ -45,28 +45,33 @@ project without a token.`,
 	}
 
 	projectsDeleteCmd = &cobra.Command{
-		Use:   "delete [--yes] name",
-		Short: "Delete an empty project and retire its name.",
-		Long: `Delete an empty project and retire its name.
+		Use:   "delete [--yes] [--cascade] name",
+		Short: "Delete a project and retire its name.",
+		Long: `Delete a project and retire its name.
 
-Only a project without services, domains and key-value storage can be deleted.
-Its name is retired for good: no project can use it again. The command asks
-for the project name to confirm, unless --yes is given.`,
+Without --cascade, only a project without services, domains and key-value
+storage can be deleted. With --cascade, its services are deleted first, then
+its domain claims. Its name is retired for good: no project can use it again.
+
+The command asks for the project name to confirm, unless --yes is given. With
+--cascade it refuses to run without a terminal to ask on, unless --yes is
+given.`,
 		Args: cobra.ExactArgs(1),
 		Run: runAndHandle(func(cmd *cobra.Command, args []string) error {
 			client, err := globalConfiguration.APIClient()
 			if err != nil {
 				return err
 			}
-			var confirm io.Reader = os.Stdin
-			if projectsDeleteYes {
-				confirm = nil
+			confirm := stdinConfirmation(projectsDeleteYes)
+			if confirm != nil && !projectsDeleteCascade {
+				// Deleting an empty project accepts the name from piped input.
+				confirm.terminal = true
 			}
-			if err := deleteProject(client, args[0], confirm, os.Stderr); err != nil {
+			if err := deleteProject(client, args[0], projectsDeleteCascade, confirm, os.Stderr); err != nil {
 				return err
 			}
 			return result(struct {
-				Name    string `json:"name"`
+				Project string `json:"project"`
 				Deleted bool   `json:"deleted"`
 			}{args[0], true}, func(io.Writer) error { return nil })
 		}),
@@ -93,21 +98,27 @@ func printProject(project *api.Project, w io.Writer) error {
 	return tw.Flush()
 }
 
-// deleteProject reads the project name from confirm before deleting, unless
-// confirm is nil.
-func deleteProject(client *api.Client, name string, confirm io.Reader, w io.Writer) error {
+// deleteProject asks confirm for the project name, then deletes the project.
+// A cascading deletion is retried, as repeating it finishes a failed one.
+func deleteProject(client *api.Client, name string, cascade bool, confirm *confirmation, w io.Writer) error {
 	if err := api.VerifyProjectName(name); err != nil {
 		return withKind(kindInvalid, err)
 	}
-	if confirm != nil {
-		fmt.Fprintf(w, "Deleting project %s retires its name for good: no project can use it again.\n", name)
-		fmt.Fprint(w, "Type the project name to confirm: ")
-		line, _ := bufio.NewReader(confirm).ReadString('\n')
-		if strings.TrimSpace(line) != name {
-			return newError(kindInvalid, "aborted: the input does not match %s, pass --yes to skip the confirmation", name)
-		}
+	warning := fmt.Sprintf("Deleting project %s retires its name for good: no project can use it again.", name)
+	if cascade {
+		warning = fmt.Sprintf("Deleting project %s deletes all its services and domain claims, and retires its name for good: no project can use it again.", name)
 	}
-	if err := client.DeleteProject(name); err != nil {
+	if err := confirm.ask(w, "project", name, warning); err != nil {
+		return err
+	}
+	del := func() error { return client.DeleteProject(name, cascade) }
+	var err error
+	if cascade {
+		err = retryDeletion(w, del)
+	} else {
+		err = del()
+	}
+	if err != nil {
 		return err
 	}
 	fmt.Fprintf(w, "Deleted project %s. Its name can't be used again.\n", name)
@@ -285,6 +296,7 @@ func authModifyWithState(state string) func(cmd *cobra.Command, args []string) e
 func initProjectsCmd() {
 	projectsCreateCmd.Flags().BoolVar(&projectsCreatePublic, "public", false, "Let anyone invoke the project's services without a token")
 	projectsDeleteCmd.Flags().BoolVarP(&projectsDeleteYes, "yes", "y", false, "Delete without asking for the project name")
+	projectsDeleteCmd.Flags().BoolVar(&projectsDeleteCascade, "cascade", false, "Delete the project's services and domain claims first")
 	projectsCmd.AddCommand(projectsCreateCmd, projectsDeleteCmd)
 	rootCmd.AddCommand(projectsCmd)
 	authCmd.AddCommand(authListCmd, authAllowCmd, authForbidCmd, authClearCmd, authCheckCmd)
