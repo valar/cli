@@ -1,7 +1,9 @@
 package cmd
 
 import (
+	"bufio"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 	"text/tabwriter"
@@ -11,6 +13,96 @@ import (
 	"github.com/valar/cli/api"
 	"github.com/valar/cli/config"
 )
+
+var (
+	projectsCreatePublic bool
+	projectsDeleteYes    bool
+)
+
+var (
+	projectsCmd = &cobra.Command{
+		Use:     "project",
+		Short:   "Create and delete projects.",
+		Aliases: []string{"projects"},
+	}
+
+	projectsCreateCmd = &cobra.Command{
+		Use:   "create [--public] name",
+		Short: "Create a project.",
+		Long: `Create a project owned by you.
+
+A name is 3 to 20 lowercase letters or digits and starts with a letter. A user
+can create at most 3 projects. Anyone can invoke the services of a public
+project without a token.`,
+		Args: cobra.ExactArgs(1),
+		Run: runAndHandle(func(cmd *cobra.Command, args []string) error {
+			client, err := globalConfiguration.APIClient()
+			if err != nil {
+				return err
+			}
+			return createProject(client, args[0], projectsCreatePublic, os.Stdout)
+		}),
+	}
+
+	projectsDeleteCmd = &cobra.Command{
+		Use:   "delete [--yes] name",
+		Short: "Delete an empty project and retire its name.",
+		Long: `Delete an empty project and retire its name.
+
+Only a project without services, domains and key-value storage can be deleted.
+Its name is retired for good: no project can use it again. The command asks
+for the project name to confirm, unless --yes is given.`,
+		Args: cobra.ExactArgs(1),
+		Run: runAndHandle(func(cmd *cobra.Command, args []string) error {
+			client, err := globalConfiguration.APIClient()
+			if err != nil {
+				return err
+			}
+			var confirm io.Reader = os.Stdin
+			if projectsDeleteYes {
+				confirm = nil
+			}
+			return deleteProject(client, args[0], confirm, os.Stderr)
+		}),
+	}
+)
+
+func createProject(client *api.Client, name string, public bool, w io.Writer) error {
+	project, err := client.CreateProject(name, public)
+	if err != nil {
+		return err
+	}
+	tw := ansiterm.NewTabWriter(w, 6, 0, 1, ' ', 0)
+	fmt.Fprintf(tw, "Project:\t%s\n", project.Name)
+	fmt.Fprintf(tw, "Creator:\t%s\n", project.Creator)
+	if project.Public {
+		fmt.Fprintf(tw, "Access:\tpublic, anyone can invoke its services\n")
+	} else {
+		fmt.Fprintf(tw, "Access:\tprivate\n")
+	}
+	return tw.Flush()
+}
+
+// deleteProject reads the project name from confirm before deleting, unless
+// confirm is nil.
+func deleteProject(client *api.Client, name string, confirm io.Reader, w io.Writer) error {
+	if err := api.VerifyProjectName(name); err != nil {
+		return err
+	}
+	if confirm != nil {
+		fmt.Fprintf(w, "Deleting project %s retires its name for good: no project can use it again.\n", name)
+		fmt.Fprint(w, "Type the project name to confirm: ")
+		line, _ := bufio.NewReader(confirm).ReadString('\n')
+		if strings.TrimSpace(line) != name {
+			return fmt.Errorf("aborted: the input does not match %s, pass --yes to skip the confirmation", name)
+		}
+	}
+	if err := client.DeleteProject(name); err != nil {
+		return err
+	}
+	fmt.Fprintf(w, "Deleted project %s. Its name can't be used again.\n", name)
+	return nil
+}
 
 var (
 	authListCmd = &cobra.Command{
@@ -170,6 +262,10 @@ func authModifyWithState(state string) func(cmd *cobra.Command, args []string) e
 }
 
 func initProjectsCmd() {
+	projectsCreateCmd.Flags().BoolVar(&projectsCreatePublic, "public", false, "Let anyone invoke the project's services without a token")
+	projectsDeleteCmd.Flags().BoolVarP(&projectsDeleteYes, "yes", "y", false, "Delete without asking for the project name")
+	projectsCmd.AddCommand(projectsCreateCmd, projectsDeleteCmd)
+	rootCmd.AddCommand(projectsCmd)
 	authCmd.AddCommand(authListCmd, authAllowCmd, authForbidCmd, authClearCmd, authCheckCmd)
 	rootCmd.AddCommand(authCmd)
 	rootCmd.AddCommand(whoamiCmd)

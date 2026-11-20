@@ -93,7 +93,7 @@ func (client *Client) request(method, path string, obj interface{}, post io.Read
 	if err != nil {
 		return fmt.Errorf("fetching request: %w", err)
 	}
-	if resp.StatusCode != http.StatusOK {
+	if resp.StatusCode < 200 || resp.StatusCode > 299 {
 		return Error{
 			StatusCode:  resp.StatusCode,
 			ServerError: parseErrorResponse(body),
