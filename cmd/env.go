@@ -51,7 +51,8 @@ var envListCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		return printEnv(os.Stdout, filterEnv(vars, envTargets(envBuild, envAll)), envFormat)
+		vars = filterEnv(vars, envTargets(envBuild, envAll))
+		return result(vars, func(w io.Writer) error { return printEnv(w, vars, envFormat) })
 	}),
 }
 
@@ -73,7 +74,7 @@ history and process listings.`,
 			return readEnvValue(os.Stdin, name)
 		})
 		if err != nil {
-			return err
+			return withKind(kindInvalid, err)
 		}
 		targets := envTargets(envBuild, envAll)
 		changes := &api.EnvChangeset{Set: map[string]api.EnvValue{}}
@@ -83,8 +84,11 @@ history and process listings.`,
 		if _, err := client.PatchEnv(cfg.Project(), cfg.Service(), changes); err != nil {
 			return err
 		}
-		fmt.Printf("Set %s (%s).\n", strings.Join(slices.Sorted(maps.Keys(values)), ", "), strings.Join(targets, ", "))
-		return nil
+		names := slices.Sorted(maps.Keys(values))
+		return result(envChange{Set: names, Targets: targets}, func(w io.Writer) error {
+			_, err := fmt.Fprintf(w, "Set %s (%s).\n", strings.Join(names, ", "), strings.Join(targets, ", "))
+			return err
+		})
 	}),
 }
 
@@ -106,9 +110,17 @@ var envUnsetCmd = &cobra.Command{
 		if _, err := client.PatchEnv(cfg.Project(), cfg.Service(), changes); err != nil {
 			return err
 		}
-		fmt.Printf("Unset %s (%s).\n", strings.Join(args, ", "), strings.Join(targets, ", "))
-		return nil
+		return result(envChange{Unset: args, Targets: targets}, func(w io.Writer) error {
+			_, err := fmt.Fprintf(w, "Unset %s (%s).\n", strings.Join(args, ", "), strings.Join(targets, ", "))
+			return err
+		})
 	}),
+}
+
+type envChange struct {
+	Set     []string `json:"set,omitempty"`
+	Unset   []string `json:"unset,omitempty"`
+	Targets []string `json:"targets"`
 }
 
 var envHistoryCmd = &cobra.Command{
@@ -125,16 +137,21 @@ var envHistoryCmd = &cobra.Command{
 			return err
 		}
 		targets := envTargets(envBuild, envAll)
-		tw := tabwriter.NewWriter(os.Stdout, 0, 1, 1, ' ', 0)
-		fmt.Fprintln(tw, "TIME\tACTION\tNAME\tTARGET\tSECRET\tORIGIN\tBY")
+		kept := []api.EnvChange{}
 		for _, c := range changes {
-			if !slices.Contains(targets, c.Target) {
-				continue
+			if slices.Contains(targets, c.Target) {
+				kept = append(kept, c)
 			}
-			fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%v\t%s\t%s\n",
-				c.CreatedAt.Local().Format("2006-01-02 15:04:05"), c.Action, c.Name, c.Target, c.Secret, c.Origin, c.CreatedBy)
 		}
-		return tw.Flush()
+		return result(kept, func(w io.Writer) error {
+			tw := tabwriter.NewWriter(w, 0, 1, 1, ' ', 0)
+			fmt.Fprintln(tw, "TIME\tACTION\tNAME\tTARGET\tSECRET\tORIGIN\tBY")
+			for _, c := range kept {
+				fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%v\t%s\t%s\n",
+					c.CreatedAt.Local().Format("2006-01-02 15:04:05"), c.Action, c.Name, c.Target, c.Secret, c.Origin, c.CreatedBy)
+			}
+			return tw.Flush()
+		})
 	}),
 }
 
@@ -151,17 +168,28 @@ ciphertexts: the command names those the service lacks, to be set again with
 	Args: cobra.NoArgs,
 	Run: runAndHandle(func(cmd *cobra.Command, args []string) error {
 		if envService != "" {
-			return fmt.Errorf("import uses the service named in %s, drop --service", functionConfiguration)
+			return newError(kindInvalid, "import uses the service named in %s, drop --service", functionConfiguration)
 		}
 		cfg, err := config.NewServiceConfigFromFile(functionConfiguration)
 		if err != nil {
-			return fmt.Errorf("read %s: %w", functionConfiguration, err)
+			return withKind(kindInvalid, fmt.Errorf("read %s: %w", functionConfiguration, err))
 		}
 		client, err := globalConfiguration.APIClient()
 		if err != nil {
 			return err
 		}
-		return importEnv(client, cfg, os.Stdout)
+		w := stdout
+		if outputJSON {
+			w = io.Discard
+		}
+		imported, err := importEnv(client, cfg, w)
+		if err != nil {
+			return err
+		}
+		if outputJSON {
+			return writeJSON(stdout, imported)
+		}
+		return nil
 	}),
 }
 
@@ -227,7 +255,7 @@ func printEnv(w io.Writer, vars []api.EnvVariable, format string) error {
 		}
 		return tw.Flush()
 	default:
-		return fmt.Errorf("unknown env format %s", format)
+		return newError(kindInvalid, "unknown env format %s", format)
 	}
 }
 
@@ -283,9 +311,23 @@ func readValue(r io.Reader) (string, error) {
 	return value, nil
 }
 
+// envImport is the outcome of importEnv for each target.
+type envImport struct {
+	Targets []envImportTarget `json:"targets"`
+	Emptied bool              `json:"emptied"`
+}
+
+type envImportTarget struct {
+	Target         string   `json:"target"`
+	Imported       []string `json:"imported"`
+	Skipped        []string `json:"skipped"`
+	MissingSecrets []string `json:"missingSecrets"`
+}
+
 // importEnv moves the inline lists of cfg to the service and empties them in
-// the file.
-func importEnv(client *api.Client, cfg *config.ValidatedServiceConfig, w io.Writer) error {
+// the file. It reports progress to w.
+func importEnv(client *api.Client, cfg *config.ValidatedServiceConfig, w io.Writer) (*envImport, error) {
+	outcome := &envImport{Targets: []envImportTarget{}}
 	yamlCfg := cfg.Unwrap()
 	lists := map[string][]config.EnvironmentConfig{}
 	if yamlCfg.Deployment != nil {
@@ -296,14 +338,15 @@ func importEnv(client *api.Client, cfg *config.ValidatedServiceConfig, w io.Writ
 	}
 	if len(lists[api.EnvTargetRuntime]) == 0 && len(lists[api.EnvTargetBuild]) == 0 {
 		fmt.Fprintf(w, "The environment lists in %s are empty, nothing to import.\n", functionConfiguration)
-		return nil
+		return outcome, nil
 	}
 	// Reading first also stops before any change on a server without the API.
 	stored, err := client.ListEnv(cfg.Project(), cfg.Service())
 	if err != nil {
-		return err
+		return nil, err
 	}
 	for _, target := range []string{api.EnvTargetRuntime, api.EnvTargetBuild} {
+		report := envImportTarget{Target: target, Imported: []string{}, Skipped: []string{}, MissingSecrets: []string{}}
 		plain, secrets := splitInlineList(lists[target])
 		if len(plain) > 0 {
 			changes := &api.EnvChangeset{Set: map[string]api.EnvValue{}, OnlySeeded: true}
@@ -312,7 +355,7 @@ func importEnv(client *api.Client, cfg *config.ValidatedServiceConfig, w io.Writ
 			}
 			result, err := client.PatchEnv(cfg.Project(), cfg.Service(), changes)
 			if err != nil {
-				return fmt.Errorf("import %s variables: %w", target, err)
+				return nil, fmt.Errorf("import %s variables: %w", target, err)
 			}
 			var imported []string
 			for _, name := range slices.Sorted(maps.Keys(plain)) {
@@ -325,9 +368,18 @@ func importEnv(client *api.Client, cfg *config.ValidatedServiceConfig, w io.Writ
 			}
 			if len(result.Skipped) > 0 {
 				fmt.Fprintf(w, "Left %s as stored, since they changed on the service after the seed.\n", strings.Join(result.Skipped, ", "))
+				report.Skipped = result.Skipped
+			}
+			if imported != nil {
+				report.Imported = imported
 			}
 		}
-		if missing := missingSecrets(secrets, stored, target); len(missing) > 0 {
+		missing := missingSecrets(secrets, stored, target)
+		if missing != nil {
+			report.MissingSecrets = missing
+		}
+		outcome.Targets = append(outcome.Targets, report)
+		if len(missing) > 0 {
 			flag := ""
 			if target == api.EnvTargetBuild {
 				flag = " --build"
@@ -343,10 +395,11 @@ func importEnv(client *api.Client, cfg *config.ValidatedServiceConfig, w io.Writ
 		yamlCfg.Build.Environment = []config.EnvironmentConfig{}
 	}
 	if err := yamlCfg.WriteBack(); err != nil {
-		return err
+		return nil, err
 	}
+	outcome.Emptied = true
 	fmt.Fprintf(w, "Emptied the environment lists in %s.\n", functionConfiguration)
-	return nil
+	return outcome, nil
 }
 
 // splitInlineList resolves an inline list the way the server applies it: the

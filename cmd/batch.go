@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"io"
 	"os"
 	"strconv"
 	"strings"
@@ -43,7 +44,7 @@ latest successful build is used.`,
 			}
 			env, err := parseBatchEnv(batchRunEnv)
 			if err != nil {
-				return err
+				return withKind(kindInvalid, err)
 			}
 			exec, err := client.TriggerBatchExecution(cfg.Project(), cfg.Service(), &api.BatchExecutionRequest{
 				Build:       batchRunBuild,
@@ -53,12 +54,19 @@ latest successful build is used.`,
 			if err != nil {
 				return err
 			}
-			fmt.Printf("Execution %s %s\n", exec.ID, colorize(exec.Status))
+			if !outputJSON {
+				fmt.Printf("Execution %s %s\n", exec.ID, colorize(exec.Status))
+			}
 			if !batchRunFollow && !batchRunWait {
-				return nil
+				return result(exec, func(io.Writer) error { return nil })
 			}
 			if batchRunFollow {
-				if err := followBatchOutput(client, cfg, exec.ID); err != nil {
+				// In JSON mode the output is progress, so it goes to stderr.
+				var out io.Writer = os.Stdout
+				if outputJSON {
+					out = os.Stderr
+				}
+				if err := followBatchOutput(client, cfg, exec.ID, out); err != nil {
 					fmt.Fprintf(os.Stderr, "could not read execution output: %v\n", err)
 				}
 			}
@@ -66,12 +74,17 @@ latest successful build is used.`,
 			if err != nil {
 				return err
 			}
-			fmt.Printf("Execution %s %s (exit %d)\n", final.ID, colorize(final.Status), final.ExitCode)
+			if err := result(final, func(w io.Writer) error {
+				_, err := fmt.Fprintf(w, "Execution %s %s (exit %d)\n", final.ID, colorize(final.Status), final.ExitCode)
+				return err
+			}); err != nil {
+				return err
+			}
 			if final.Status != "succeeded" {
 				if final.Error != "" {
-					fmt.Fprintln(os.Stderr, final.Error)
+					return newError(kindFailed, "%s", final.Error)
 				}
-				os.Exit(1)
+				return &cliError{kind: kindFailed, err: fmt.Errorf("execution %s %s", final.ID, final.Status), silent: true}
 			}
 			return nil
 		}),
@@ -89,7 +102,10 @@ latest successful build is used.`,
 			if err != nil {
 				return err
 			}
-			tw := tabwriter.NewWriter(os.Stdout, 0, 0, 1, ' ', 0)
+			if outputJSON {
+				return writeJSON(stdout, execs)
+			}
+			tw := tabwriter.NewWriter(stdout, 0, 0, 1, ' ', 0)
 			fmt.Fprintln(tw, "ID\tSTATUS\tEXIT\tBUILD\tCREATED\tNOTE")
 			for _, exec := range execs {
 				fmt.Fprintln(tw, strings.Join([]string{
@@ -118,7 +134,10 @@ latest successful build is used.`,
 			if err != nil {
 				return err
 			}
-			tw := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+			if outputJSON {
+				return writeJSON(stdout, exec)
+			}
+			tw := tabwriter.NewWriter(stdout, 0, 0, 2, ' ', 0)
 			fmt.Fprintf(tw, "ID:\t%s\n", exec.ID)
 			fmt.Fprintf(tw, "Status:\t%s\n", colorize(exec.Status))
 			fmt.Fprintf(tw, "Exit code:\t%d\n", exec.ExitCode)
@@ -158,11 +177,16 @@ latest successful build is used.`,
 			if err != nil {
 				return err
 			}
+			w, flush := logOutput()
 			if batchLogsFollow {
-				return followBatchOutput(client, cfg, args[0])
+				err = followBatchOutput(client, cfg, args[0], w)
+			} else {
+				_, err = client.ReadBatchExecutionLogs(cfg.Project(), cfg.Service(), args[0], 0, w)
 			}
-			_, err = client.ReadBatchExecutionLogs(cfg.Project(), cfg.Service(), args[0], 0, os.Stdout)
-			return err
+			if err != nil {
+				return err
+			}
+			return flush()
 		}),
 	}
 
@@ -178,8 +202,13 @@ latest successful build is used.`,
 			if err := client.CancelBatchExecution(cfg.Project(), cfg.Service(), args[0]); err != nil {
 				return err
 			}
-			fmt.Printf("Execution %s cancelled\n", args[0])
-			return nil
+			return result(struct {
+				ID        string `json:"id"`
+				Cancelled bool   `json:"cancelled"`
+			}{args[0], true}, func(w io.Writer) error {
+				_, err := fmt.Fprintf(w, "Execution %s cancelled\n", args[0])
+				return err
+			})
 		}),
 	}
 
@@ -223,7 +252,10 @@ latest successful build is used.`,
 					return err
 				}
 			}
-			tw := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
+			if outputJSON {
+				return writeJSON(stdout, current)
+			}
+			tw := tabwriter.NewWriter(stdout, 0, 0, 2, ' ', 0)
 			fmt.Fprintf(tw, "Max parallelism:\t%s\n", zeroAsDefault(current.MaxParallelism, "1"))
 			fmt.Fprintf(tw, "Timeout:\t%s\n", zeroAsDefault(current.TimeoutSeconds, "3600 (platform default)"))
 			fmt.Fprintf(tw, "Weight:\t%s\n", zeroAsDefault(current.Weight, "1 (platform default)"))
@@ -327,7 +359,7 @@ func awaitBatchCompletion(client *api.Client, cfg config.ServiceConfig, id strin
 // server never closes a followed batch log, so a follower cannot tell when the
 // execution is done and simply hangs -- which it did. Polling puts the
 // termination condition where the answer actually lives: the execution's status.
-func followBatchOutput(client *api.Client, cfg config.ServiceConfig, id string) error {
+func followBatchOutput(client *api.Client, cfg config.ServiceConfig, id string, w io.Writer) error {
 	offset := 0
 	for {
 		exec, err := client.InspectBatchExecution(cfg.Project(), cfg.Service(), id)
@@ -337,7 +369,7 @@ func followBatchOutput(client *api.Client, cfg config.ServiceConfig, id string) 
 		// A queued execution has no log yet, and asking for one is an error
 		// rather than an empty read.
 		if exec.Status != "pending" {
-			n, err := client.ReadBatchExecutionLogs(cfg.Project(), cfg.Service(), id, offset, os.Stdout)
+			n, err := client.ReadBatchExecutionLogs(cfg.Project(), cfg.Service(), id, offset, w)
 			offset += n
 			if err != nil && !isTerminalBatchStatus(exec.Status) {
 				// Transient while the container is still coming up.
@@ -350,7 +382,7 @@ func followBatchOutput(client *api.Client, cfg config.ServiceConfig, id string) 
 		if isTerminalBatchStatus(exec.Status) {
 			// The status was read before the log, so anything written between
 			// the two reads is still outstanding.
-			n, err := client.ReadBatchExecutionLogs(cfg.Project(), cfg.Service(), id, offset, os.Stdout)
+			n, err := client.ReadBatchExecutionLogs(cfg.Project(), cfg.Service(), id, offset, w)
 			offset += n
 			if err != nil {
 				return err

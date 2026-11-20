@@ -32,6 +32,32 @@ By default, Valar uses the default valarconfig file in `$HOME/.valar/config`. If
 VALAR_TOKEN=... valar build push --wait
 ```
 
+### Machine-readable output
+
+With `--json`, or `VALAR_OUTPUT=json`, every command prints its result as one JSON document on stdout. Lists are arrays of objects whose fields match the API's JSON. Logs (`service logs`, `build logs`, `build watch`, `batch logs`) are printed as one JSON object per line, progress goes to stderr, and an error is printed on stderr as:
+
+```json
+{"error": {"kind": "notFound", "message": "no builds available"}}
+```
+
+```bash
+valar service list --json | jq -r '.[].name'
+```
+
+### Exit codes
+
+| Code | Kind | Meaning |
+|---|---|---|
+| 0 | | Success |
+| 1 | `failed` | The operation ran and failed, such as a build or deployment |
+| 2 | `invalid` | Bad arguments, flags or configuration |
+| 3 | `notFound` | Not found |
+| 4 | `notAllowed` | Missing or rejected credentials or permissions |
+| 5 | `conflict` | Conflict with the current state |
+| 6 | `unavailable` | The server could not be reached or answered with an error |
+
+`valar build status` exits with 1 for any build that is not done.
+
 ### Configuration
 
 #### Initialize configuration
@@ -45,6 +71,14 @@ valar config init [--token token] [--project project] [--url url] [--name name] 
 ```bash
 valar config view
 ```
+
+#### Print the JSON Schema of `.valar.yml`
+
+```bash
+valar config schema
+```
+
+The schema is also checked in at [`schema/valar.yml.json`](schema/valar.yml.json), for editors. The CLI refuses a `.valar.yml` with keys the schema does not know, naming the key and its line.
 
 #### Add an API endpoint
 

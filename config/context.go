@@ -84,12 +84,12 @@ type envOverrides struct {
 }
 
 type CLIConfig struct {
-	Version       string                 `yaml:"version"`
-	ActiveContext string                 `yaml:"activeContext"`
-	Endpoints     map[string]APIEndpoint `yaml:"endpoints"`
-	Contexts      map[string]CLIContext  `yaml:"contexts"`
+	Version       string                 `yaml:"version" json:"version"`
+	ActiveContext string                 `yaml:"activeContext" json:"activeContext"`
+	Endpoints     map[string]APIEndpoint `yaml:"endpoints" json:"endpoints"`
+	Contexts      map[string]CLIContext  `yaml:"contexts" json:"contexts"`
 
-	Path string `yaml:"-"`
+	Path string `yaml:"-" json:"-"`
 
 	env envOverrides
 }
@@ -100,8 +100,7 @@ func (cfg *CLIConfig) Token() string {
 	}
 	token := cfg.Endpoints[cfg.Contexts[cfg.ActiveContext].Endpoint].Token
 	if len(token) == 0 {
-		fmt.Fprintln(os.Stderr, "Operation requires valid endpoint token.")
-		os.Exit(1)
+		Abort("Operation requires valid endpoint token.")
 	}
 	return token
 }
@@ -115,8 +114,7 @@ func (cfg *CLIConfig) Endpoint() string {
 		return DefaultEndpoint
 	}
 	if len(url) == 0 {
-		fmt.Fprintln(os.Stderr, "Operation requires valid endpoint URL.")
-		os.Exit(1)
+		Abort("Operation requires valid endpoint URL.")
 	}
 	return url
 }
@@ -127,8 +125,7 @@ func (cfg *CLIConfig) Project() string {
 	}
 	project := cfg.Contexts[cfg.ActiveContext].Project
 	if len(project) == 0 {
-		fmt.Fprintln(os.Stderr, "Operation requires valid context project.")
-		os.Exit(1)
+		Abort("Operation requires valid context project.")
 	}
 	return project
 }
@@ -150,11 +147,11 @@ func (cfg *CLIConfig) Write() error {
 }
 
 type APIEndpoint struct {
-	Token string `yaml:"token"`
-	URL   string `yaml:"url"`
+	Token string `yaml:"token" json:"token"`
+	URL   string `yaml:"url" json:"url"`
 }
 
 type CLIContext struct {
-	Endpoint string `yaml:"endpoint"`
-	Project  string `yaml:"project"`
+	Endpoint string `yaml:"endpoint" json:"endpoint"`
+	Project  string `yaml:"project" json:"project"`
 }

@@ -3,8 +3,8 @@ package cmd
 import (
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
-	"os"
 	"strings"
 	"text/tabwriter"
 
@@ -37,13 +37,15 @@ var (
 			if err != nil {
 				return err
 			}
-			tw := tabwriter.NewWriter(os.Stdout, 0, 0, 1, ' ', 0)
-			fmt.Fprintln(tw, "NAME\tTIMESPEC\tPATH\tSTATUS")
-			for _, sched := range schedules {
-				fmt.Fprintln(tw, strings.Join([]string{sched.Name, sched.Timespec, sched.Path, colorize(sched.Status)}, "\t"))
-			}
-			tw.Flush()
-			return nil
+			return result(schedules, func(w io.Writer) error {
+				tw := tabwriter.NewWriter(w, 0, 0, 1, ' ', 0)
+				fmt.Fprintln(tw, "NAME\tTIMESPEC\tPATH\tSTATUS")
+				for _, sched := range schedules {
+					fmt.Fprintln(tw, strings.Join([]string{sched.Name, sched.Timespec, sched.Path, colorize(sched.Status)}, "\t"))
+				}
+				tw.Flush()
+				return nil
+			})
 		}),
 	}
 
@@ -91,8 +93,7 @@ var (
 				}
 			} else {
 				if len(args) != 2 {
-					fmt.Fprintln(os.Stderr, "Timespec must be specified when setting a schedule for the first time.")
-					os.Exit(1)
+					return newError(kindInvalid, "Timespec must be specified when setting a schedule for the first time.")
 				}
 				schedule = api.Schedule{
 					Name:     args[0],
@@ -109,7 +110,7 @@ var (
 			if err := client.SetSchedule(cfg.Project(), cfg.Service(), schedule); err != nil {
 				return err
 			}
-			return nil
+			return result(schedule, func(io.Writer) error { return nil })
 		}),
 	}
 
@@ -129,7 +130,10 @@ var (
 			if err := client.TriggerSchedule(cfg.Project(), cfg.Service(), args[0]); err != nil {
 				return err
 			}
-			return nil
+			return result(struct {
+				Name      string `json:"name"`
+				Triggered bool   `json:"triggered"`
+			}{args[0], true}, func(io.Writer) error { return nil })
 		}),
 	}
 	cronDeleteCmd = &cobra.Command{
@@ -148,7 +152,10 @@ var (
 			if err := client.DeleteSchedule(cfg.Project(), cfg.Service(), args[0]); err != nil {
 				return err
 			}
-			return nil
+			return result(struct {
+				Name    string `json:"name"`
+				Deleted bool   `json:"deleted"`
+			}{args[0], true}, func(io.Writer) error { return nil })
 		}),
 	}
 	cronInspectCmd = &cobra.Command{
@@ -168,7 +175,10 @@ var (
 			if err != nil {
 				return err
 			}
-			tw := tabwriter.NewWriter(os.Stdout, 0, 0, 1, ' ', 0)
+			if outputJSON {
+				return writeJSON(stdout, details)
+			}
+			tw := tabwriter.NewWriter(stdout, 0, 0, 1, ' ', 0)
 			fmt.Fprintln(tw, "Name:\t", details.Schedule.Name)
 			fmt.Fprintln(tw, "Timespec:\t", details.Schedule.Timespec)
 			fmt.Fprintln(tw, "Path:\t", details.Schedule.Path)
