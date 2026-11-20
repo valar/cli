@@ -1,6 +1,7 @@
 package config
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -10,9 +11,21 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// DefaultEndpoint is the API used when VALAR_TOKEN is set and neither the
+// configuration nor VALAR_ENDPOINT names an endpoint.
+const DefaultEndpoint = "https://api.valar.dev/v2"
+
+// Environment variables that take precedence over the active context, so CI
+// needs no configuration file.
+const (
+	EnvToken    = "VALAR_TOKEN"
+	EnvEndpoint = "VALAR_ENDPOINT"
+	EnvProject  = "VALAR_PROJECT"
+)
+
 func NewCLIConfigFromEnvironment() (*CLIConfig, error) {
-	cfgpath, ok := os.LookupEnv("VALARCONFIG")
-	if !ok {
+	cfgpath, explicit := os.LookupEnv("VALARCONFIG")
+	if !explicit {
 		homedir, err := os.UserHomeDir()
 		if err != nil {
 			return nil, fmt.Errorf("load config: %w", err)
@@ -33,6 +46,9 @@ func NewCLIConfigFromEnvironment() (*CLIConfig, error) {
 	}
 	for _, path := range cfgpaths {
 		data, err := os.ReadFile(path)
+		if !explicit && errors.Is(err, os.ErrNotExist) {
+			continue
+		}
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Warning: Could not read config file %s: %s\n", path, err)
 			continue
@@ -53,9 +69,18 @@ func NewCLIConfigFromEnvironment() (*CLIConfig, error) {
 			cfg.Endpoints[name] = ep
 		}
 	}
-	// Extract project, token, endpoint
 	cfg.Path = cfgpaths[len(cfgpaths)-1]
+	cfg.env = envOverrides{
+		Token:    os.Getenv(EnvToken),
+		Endpoint: os.Getenv(EnvEndpoint),
+		Project:  os.Getenv(EnvProject),
+	}
 	return cfg, nil
+}
+
+// envOverrides holds the VALAR_* variables; they are never written back.
+type envOverrides struct {
+	Token, Endpoint, Project string
 }
 
 type CLIConfig struct {
@@ -65,9 +90,14 @@ type CLIConfig struct {
 	Contexts      map[string]CLIContext  `yaml:"contexts"`
 
 	Path string `yaml:"-"`
+
+	env envOverrides
 }
 
 func (cfg *CLIConfig) Token() string {
+	if cfg.env.Token != "" {
+		return cfg.env.Token
+	}
 	token := cfg.Endpoints[cfg.Contexts[cfg.ActiveContext].Endpoint].Token
 	if len(token) == 0 {
 		fmt.Fprintln(os.Stderr, "Operation requires valid endpoint token.")
@@ -77,7 +107,13 @@ func (cfg *CLIConfig) Token() string {
 }
 
 func (cfg *CLIConfig) Endpoint() string {
+	if cfg.env.Endpoint != "" {
+		return cfg.env.Endpoint
+	}
 	url := cfg.Endpoints[cfg.Contexts[cfg.ActiveContext].Endpoint].URL
+	if len(url) == 0 && cfg.env.Token != "" {
+		return DefaultEndpoint
+	}
 	if len(url) == 0 {
 		fmt.Fprintln(os.Stderr, "Operation requires valid endpoint URL.")
 		os.Exit(1)
@@ -86,6 +122,9 @@ func (cfg *CLIConfig) Endpoint() string {
 }
 
 func (cfg *CLIConfig) Project() string {
+	if cfg.env.Project != "" {
+		return cfg.env.Project
+	}
 	project := cfg.Contexts[cfg.ActiveContext].Project
 	if len(project) == 0 {
 		fmt.Fprintln(os.Stderr, "Operation requires valid context project.")

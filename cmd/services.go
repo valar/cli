@@ -1,12 +1,16 @@
 package cmd
 
 import (
+	"errors"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
 	"sort"
 	"strconv"
 	"strings"
 	"text/tabwriter"
+	"time"
 
 	"github.com/dustin/go-humanize"
 	"github.com/spf13/cobra"
@@ -171,7 +175,7 @@ var serviceDisableCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		return client.ChangeServiceStatus(cfg.Project(), cfg.Service(), false)
+		return client.ChangeServiceStatus(cfg.Project(), cfg.Service(), true)
 	}),
 }
 
@@ -190,8 +194,90 @@ var serviceEnableCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		return client.ChangeServiceStatus(cfg.Project(), cfg.Service(), true)
+		return enableService(client, cfg.Project(), cfg.Service(), os.Stderr)
 	}),
+}
+
+// enableRetryWindow bounds how long enabling retries while the platform still
+// stops the instances of an earlier disable, which it answers with 409.
+var enableRetryWindow = 2 * time.Minute
+
+func enableService(client *api.Client, project, service string, w io.Writer) error {
+	deadline := time.Now().Add(enableRetryWindow)
+	waiting := false
+	for {
+		err := client.ChangeServiceStatus(project, service, false)
+		var apiErr api.Error
+		if err == nil || !errors.As(err, &apiErr) || apiErr.StatusCode != http.StatusConflict || time.Now().After(deadline) {
+			return err
+		}
+		if !waiting {
+			fmt.Fprintln(w, "Waiting for the instances of the earlier disable to stop ...")
+			waiting = true
+		}
+		time.Sleep(pollInterval)
+	}
+}
+
+var serviceURLService string
+
+var serviceURLCmd = &cobra.Command{
+	Use:   "url [--service service]",
+	Short: "Print the service's URLs, the preferred one first.",
+	Args:  cobra.NoArgs,
+	Run: runAndHandle(func(cmd *cobra.Command, args []string) error {
+		client, err := globalConfiguration.APIClient()
+		if err != nil {
+			return err
+		}
+		cfg, err := config.NewServiceConfigWithFallback(functionConfiguration, &serviceURLService, globalConfiguration)
+		if err != nil {
+			return err
+		}
+		project, service := cfg.Project(), cfg.Service()
+		services, err := client.ListServices(project, service)
+		if err != nil {
+			return fmt.Errorf("listing services: %w", err)
+		}
+		for _, svc := range services {
+			if svc.Name != service {
+				continue
+			}
+			urls := serviceURLs(project, svc)
+			if len(urls) == 0 {
+				return fmt.Errorf("service %s has no domains yet; it gets them with its first deployment", service)
+			}
+			fmt.Println(strings.Join(urls, "\n"))
+			return nil
+		}
+		return fmt.Errorf("service %s not found", service)
+	}),
+}
+
+// serviceURLs orders a service's domains as URLs: linked custom domains first,
+// then the canonical <project>-<service>.<domain> ones, shortest first.
+func serviceURLs(project string, svc api.Service) []string {
+	canonicalPrefix := project + "-" + svc.Name + "."
+	var custom, canonical []string
+	for _, d := range svc.Domains {
+		if strings.HasPrefix(d, canonicalPrefix) {
+			canonical = append(canonical, d)
+		} else {
+			custom = append(custom, d)
+		}
+	}
+	sort.Strings(custom)
+	sort.Slice(canonical, func(i, j int) bool {
+		if len(canonical[i]) != len(canonical[j]) {
+			return len(canonical[i]) < len(canonical[j])
+		}
+		return canonical[i] < canonical[j]
+	})
+	urls := make([]string, 0, len(svc.Domains))
+	for _, d := range append(custom, canonical...) {
+		urls = append(urls, "https://"+d)
+	}
+	return urls
 }
 
 func initServicesCmd() {
@@ -205,6 +291,9 @@ func initServicesCmd() {
 	serviceLogsCmd.Flags().BoolVarP(&serviceLogsTail, "tail", "t", false, "Jump to end of logs")
 	serviceLogsCmd.Flags().IntVarP(&serviceLogsLines, "skip", "n", 0, "Lines to skip/rewind when reading logs")
 	serviceLogsCmd.Flags().StringVarP(&serviceLogsService, "service", "s", "", "The service to target")
-	serviceCmd.AddCommand(serviceListCmd, serviceLogsCmd, serviceInitCmd, serviceEnableCmd, serviceDisableCmd)
+	serviceURLCmd.Flags().StringVarP(&serviceURLService, "service", "s", "", "The service to target")
+	serviceDisableCmd.Flags().StringVarP(&serviceDisableService, "service", "s", "", "The service to target")
+	serviceEnableCmd.Flags().StringVarP(&serviceEnableService, "service", "s", "", "The service to target")
+	serviceCmd.AddCommand(serviceListCmd, serviceLogsCmd, serviceInitCmd, serviceEnableCmd, serviceDisableCmd, serviceURLCmd)
 	rootCmd.AddCommand(serviceCmd)
 }

@@ -255,7 +255,7 @@ var buildWatchCmd = &cobra.Command{
 		bar.Finish()
 		fmt.Println()
 
-		return nil
+		return buildOutcome(build)
 	}),
 }
 
@@ -278,6 +278,14 @@ func watchBuildPlain(client *api.Client, cfg config.ServiceConfig, buildID strin
 		fmt.Println("Build has failed.")
 	default:
 		fmt.Printf("Build is %s.\n", build.Status)
+	}
+	return buildOutcome(build)
+}
+
+// buildOutcome turns a failed build into an error, so the exit code tells.
+func buildOutcome(build *api.Build) error {
+	if build.Status == "failed" {
+		return fmt.Errorf("build %s failed%s", build.ID, detail(build.Err))
 	}
 	return nil
 }
@@ -439,7 +447,11 @@ func colorize(status string) string {
 	}
 }
 
-var buildPushNoDeploy bool
+var (
+	buildPushNoDeploy bool
+	buildPushWait     bool
+	buildPushTimeout  time.Duration
+)
 
 var buildPushCmd = &cobra.Command{
 	Use:   "push folder",
@@ -450,7 +462,7 @@ var buildPushCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		serviceCfg, err := config.NewServiceConfigWithFallback(functionConfiguration, nil, globalConfiguration)
+		serviceCfg, err := config.NewServiceConfigWithFallback(functionConfiguration, &buildService, globalConfiguration)
 		if err != nil {
 			return err
 		}
@@ -494,16 +506,21 @@ var buildPushCmd = &cobra.Command{
 			return err
 		}
 		fmt.Println(build.ID)
-		return nil
+		if !buildPushWait {
+			return nil
+		}
+		return waitForPush(client, serviceCfg.Project(), serviceCfg.Service(), build.ID, !buildPushNoDeploy, buildPushTimeout, os.Stderr)
 	}),
 }
 
 func initBuildsCmd() {
-	buildCmd.PersistentFlags().StringVarP(&buildService, "service", "s", "", "The service to inspect for builds")
+	buildCmd.PersistentFlags().StringVarP(&buildService, "service", "s", "", "The service to act on, instead of the one in .valar.yml")
 	buildLogsCmd.PersistentFlags().BoolVarP(&logsFollow, "follow", "f", false, "Follow the logs")
 	buildLogsCmd.PersistentFlags().BoolVarP(&logsRaw, "raw", "r", false, "Dump the unformatted log content")
 	buildPushCmd.Flags().BoolVar(&buildPushNoDeploy, "no-deploy", false, "Only build, skip deploy action")
 	buildPushCmd.Flags().StringVar(&buildPushKind, "kind", "", `Workload type for a new service: "function" (default) or "batch"`)
+	buildPushCmd.Flags().BoolVarP(&buildPushWait, "wait", "w", false, "Stream the build log to stderr, wait for the build and deployment, and fail if either fails")
+	buildPushCmd.Flags().DurationVar(&buildPushTimeout, "timeout", 30*time.Minute, "How long --wait waits for the build and deployment together")
 	buildCmd.AddCommand(buildListCmd, buildInspectCmd, buildLogsCmd, buildAbortCmd, buildStatusCmd, buildWatchCmd, buildPushCmd)
 	rootCmd.AddCommand(buildCmd)
 }
