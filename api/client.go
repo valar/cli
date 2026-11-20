@@ -196,6 +196,12 @@ func (client *Client) AbortBuild(project, service, id string) error {
 	return nil
 }
 
+// DeleteService deletes a service with everything it holds. A failed deletion
+// leaves the service disabled; deleting again finishes it.
+func (client *Client) DeleteService(project, service string) error {
+	return client.request(http.MethodDelete, fmt.Sprintf("/projects/%s/services/%s", project, service), nil, nil)
+}
+
 // Sets a service' status. A disabled service cannot receive any requests.
 func (client *Client) ChangeServiceStatus(project, service string, disabled bool) error {
 	var (

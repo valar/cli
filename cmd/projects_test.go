@@ -6,7 +6,10 @@ import (
 	"testing"
 )
 
-const deleteRoute = "DELETE /projects/demo"
+const (
+	deleteRoute  = "DELETE /projects/demo"
+	cascadeRoute = "DELETE /projects/demo?cascade=true"
+)
 
 func TestCreateProject(t *testing.T) {
 	for _, tc := range []struct {
@@ -39,35 +42,44 @@ func TestCreateProject(t *testing.T) {
 
 func TestDeleteProject(t *testing.T) {
 	for _, tc := range []struct {
-		Name       string
-		Project    string
-		Confirm    *string
-		WantDelete bool
-		WantErr    string
+		Name         string
+		Project      string
+		Cascade      bool
+		Confirm      *confirmation
+		Statuses     []int
+		WantRequests []string
+		WantKind     errorKind
+		WantErr      string
 	}{
-		{"Confirmed", "demo", ptr("demo\n"), true, ""},
-		{"ConfirmedWithoutNewline", "demo", ptr("  demo"), true, ""},
-		{"Yes", "demo", nil, true, ""},
-		{"Mismatch", "demo", ptr("dem\n"), false, "aborted"},
-		{"NoInput", "demo", ptr(""), false, "--yes"},
+		{"Confirmed", "demo", false, terminalInput("demo\n"), []int{200}, []string{deleteRoute}, 0, ""},
+		{"ConfirmedWithoutNewline", "demo", false, terminalInput("  demo"), []int{200}, []string{deleteRoute}, 0, ""},
+		{"Yes", "demo", false, nil, []int{200}, []string{deleteRoute}, 0, ""},
+		{"Mismatch", "demo", false, terminalInput("dem\n"), []int{200}, nil, kindInvalid, "aborted"},
+		{"NoInput", "demo", false, terminalInput(""), []int{200}, nil, kindInvalid, "--yes"},
 		// The name is part of the request path, so it must be one.
-		{"InvalidName", "demo/services/api", nil, false, "invalid project name"},
+		{"InvalidName", "demo/services/api", false, nil, []int{200}, nil, kindInvalid, "invalid project name"},
+		// Without cascade a conflict means the project isn't empty.
+		{"NotEmptyNotRetried", "demo", false, nil, []int{409}, []string{deleteRoute}, kindConflict, "Conflict"},
+		{"Cascade", "demo", true, terminalInput("demo\n"), []int{200}, []string{cascadeRoute}, 0, ""},
+		{"CascadeNotATerminal", "demo", true, &confirmation{in: strings.NewReader("demo\n")}, []int{200}, nil, kindInvalid, "pass --yes"},
+		{"CascadeConflictRetried", "demo", true, nil, []int{409, 200}, []string{cascadeRoute, cascadeRoute}, 0, ""},
+		{"CascadeRetryThenNotFound", "demo", true, nil, []int{502, 404}, []string{cascadeRoute, cascadeRoute}, 0, ""},
+		{"CascadeNotFound", "demo", true, nil, []int{404}, []string{cascadeRoute}, kindNotFound, "Not Found"},
 	} {
 		t.Run(tc.Name, func(t *testing.T) {
-			client, requests := newFakeAPI(t, map[string]string{deleteRoute: `{"status":"ok"}`})
+			fastDeleteRetries(t)
+			client, requests := newScriptedAPI(t, tc.Statuses...)
 			var out bytes.Buffer
-			var err error
-			if tc.Confirm == nil {
-				err = deleteProject(client, tc.Project, nil, &out)
-			} else {
-				err = deleteProject(client, tc.Project, strings.NewReader(*tc.Confirm), &out)
-			}
-			if deleted := len(*requests) == 1; deleted != tc.WantDelete {
-				t.Fatalf("requests %+v, want delete %v", *requests, tc.WantDelete)
+			err := deleteProject(client, tc.Project, tc.Cascade, tc.Confirm, &out)
+			if strings.Join(*requests, ",") != strings.Join(tc.WantRequests, ",") {
+				t.Fatalf("requests %v, want %v", *requests, tc.WantRequests)
 			}
 			if tc.WantErr != "" {
 				if err == nil || !strings.Contains(err.Error(), tc.WantErr) {
 					t.Fatalf("error = %v, want one containing %q", err, tc.WantErr)
+				}
+				if got := classify(err, kindFailed); got != tc.WantKind {
+					t.Errorf("kind = %v, want %v", got, tc.WantKind)
 				}
 				return
 			}
@@ -82,11 +94,22 @@ func TestDeleteProject(t *testing.T) {
 }
 
 func TestDeleteProject_PromptNamesRetirement(t *testing.T) {
-	client, _ := newFakeAPI(t, map[string]string{deleteRoute: `{"status":"ok"}`})
-	var out bytes.Buffer
-	deleteProject(client, "demo", strings.NewReader("no\n"), &out)
-	if !strings.Contains(out.String(), "retires its name") {
-		t.Errorf("prompt %q does not warn that the name is retired", out.String())
+	for _, tc := range []struct {
+		Name    string
+		Cascade bool
+		Want    string
+	}{
+		{"Empty", false, "retires its name"},
+		{"Cascade", true, "deletes all its services and domain claims"},
+	} {
+		t.Run(tc.Name, func(t *testing.T) {
+			client, _ := newScriptedAPI(t, 200)
+			var out bytes.Buffer
+			deleteProject(client, "demo", tc.Cascade, terminalInput("no\n"), &out)
+			if !strings.Contains(out.String(), tc.Want) {
+				t.Errorf("prompt %q lacks %q", out.String(), tc.Want)
+			}
+		})
 	}
 }
 

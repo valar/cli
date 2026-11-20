@@ -247,6 +247,43 @@ func enableService(client *api.Client, project, service string, w io.Writer) err
 	}
 }
 
+var serviceDeleteYes bool
+
+var serviceDeleteCmd = &cobra.Command{
+	Use:   "delete [--yes] [service]",
+	Short: "Delete a service and everything it holds.",
+	Long: `Delete a service with its builds, deployments, batch executions,
+environment, secrets, schedules and the permission rules on it. Its linked
+domains are unlinked; the project keeps their claims.
+
+The service defaults to the one in .valar.yml. The command asks for the
+service name to confirm, unless --yes is given; without a terminal to ask on it
+refuses instead. A deletion that fails leaves the service disabled, and running
+the command again finishes it.`,
+	Args: cobra.MaximumNArgs(1),
+	Run: runAndHandle(func(cmd *cobra.Command, args []string) error {
+		client, err := globalConfiguration.APIClient()
+		if err != nil {
+			return err
+		}
+		var service string
+		if len(args) == 1 {
+			service = args[0]
+		}
+		cfg, err := config.NewServiceConfigWithFallback(functionConfiguration, &service, globalConfiguration)
+		if err != nil {
+			return err
+		}
+		if err := deleteService(client, cfg.Project(), cfg.Service(), stdinConfirmation(serviceDeleteYes), os.Stderr); err != nil {
+			return err
+		}
+		return result(struct {
+			Service string `json:"service"`
+			Deleted bool   `json:"deleted"`
+		}{cfg.Service(), true}, func(io.Writer) error { return nil })
+	}),
+}
+
 var serviceURLService string
 
 var serviceURLCmd = &cobra.Command{
@@ -325,6 +362,7 @@ func initServicesCmd() {
 	serviceURLCmd.Flags().StringVarP(&serviceURLService, "service", "s", "", "The service to target")
 	serviceDisableCmd.Flags().StringVarP(&serviceDisableService, "service", "s", "", "The service to target")
 	serviceEnableCmd.Flags().StringVarP(&serviceEnableService, "service", "s", "", "The service to target")
-	serviceCmd.AddCommand(serviceListCmd, serviceLogsCmd, serviceInitCmd, serviceEnableCmd, serviceDisableCmd, serviceURLCmd)
+	serviceDeleteCmd.Flags().BoolVarP(&serviceDeleteYes, "yes", "y", false, "Delete without asking for the service name")
+	serviceCmd.AddCommand(serviceListCmd, serviceLogsCmd, serviceInitCmd, serviceEnableCmd, serviceDisableCmd, serviceURLCmd, serviceDeleteCmd)
 	rootCmd.AddCommand(serviceCmd)
 }
