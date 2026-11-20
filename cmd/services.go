@@ -41,6 +41,16 @@ var serviceInitCmd = &cobra.Command{
 		if err := api.VerifyNames(initProject, args[0]); err != nil {
 			return newError(kindInvalid, "bad naming scheme: %w", err)
 		}
+		if _, err := os.Stat(functionConfiguration); err == nil && !initForce {
+			return newError(kindConflict, "configuration already exists, please use --force flag to override")
+		}
+		if initConstructor == "" {
+			detected, err := detectConstructor(".", os.Stderr)
+			if err != nil {
+				return err
+			}
+			initConstructor = detected
+		}
 		cfg := &config.ServiceConfigYAML{
 			Project: initProject,
 			Service: args[0],
@@ -49,9 +59,6 @@ var serviceInitCmd = &cobra.Command{
 				Ignore:      initIgnore,
 			},
 			Deployment: &config.DeploymentConfig{},
-		}
-		if _, err := os.Stat(functionConfiguration); err == nil && !initForce {
-			return newError(kindConflict, "configuration already exists, please use --force flag to override")
 		}
 		if err := cfg.WriteToFile(functionConfiguration); err != nil {
 			return err
@@ -308,10 +315,9 @@ func serviceURLs(project string, svc api.Service) []string {
 func initServicesCmd() {
 	initPf := serviceInitCmd.PersistentFlags()
 	initPf.StringArrayVarP(&initIgnore, "ignore", "i", []string{".valar.yml", ".git", "node_modules"}, "Ignore files on push")
-	initPf.StringVarP(&initConstructor, "type", "t", "", "Build constructor type")
+	initPf.StringVarP(&initConstructor, "type", "t", "", "Build constructor type, detected from the project files when omitted")
 	initPf.StringVarP(&initProject, "project", "p", "", "Project to deploy service to, defaults to project set in global config")
 	initPf.BoolVarP(&initForce, "force", "f", false, "Allow configuration override")
-	cobra.MarkFlagRequired(initPf, "type")
 	serviceLogsCmd.Flags().BoolVarP(&serviceLogsFollow, "follow", "f", false, "Follow logs")
 	serviceLogsCmd.Flags().BoolVarP(&serviceLogsTail, "tail", "t", false, "Jump to end of logs")
 	serviceLogsCmd.Flags().IntVarP(&serviceLogsLines, "skip", "n", 0, "Lines to skip/rewind when reading logs")

@@ -153,8 +153,20 @@ Only empty projects can be deleted: a project with services, domains or key-valu
 #### Create local configuration
 
 ```bash
-valar service init --type=[constructor] [--project=[project-name]] [service]
+valar service init [--type=[constructor]] [--project=[project-name]] [service]
 ```
+
+Without `--type`, the constructor is detected from the files in the current directory, and the first match wins:
+
+| File | Constructor |
+|---|---|
+| `go.mod` | `go` |
+| `package.json` | `node` |
+| `requirements.txt` or `pyproject.toml` | `python` |
+| `index.html` | `static` |
+| `Dockerfile` | `docker` |
+
+The choice is printed to stderr and written to `.valar.yml`. `build push` detects the constructor the same way when `.valar.yml` names none.
 
 Valar supports a variety of constructors. If you are looking for an up-to-date list, please refer to [the official documentation](https://docs.valar.dev).
 
