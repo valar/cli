@@ -84,21 +84,29 @@ valar config context remove [context]
 
 ### Projects
 
-#### Set up a new project [not implemented]
+These commands need Valar platform 2.11.0 or newer.
+
+#### Set up a new project
 
 ```bash
 valar projects create [--public] [project-name]
 ```
 
-Public projects can be invoked by any anonymous person.
+A project name is 3 to 20 lowercase letters or digits and starts with a letter. Some names are reserved. Each user can create at most 3 projects.
 
-#### Delete a project [not implemented]
+> [!WARNING]
+> With `--public`, anyone can invoke the project's services without a token.
+
+#### Delete a project
 
 ```bash
-valar projects delete [project-name]
+valar projects delete [--yes] [project-name]
 ```
 
-Destroying a project deletes all services and configuration associated with it. Use with care.
+Only empty projects can be deleted: a project with services, domains or key-value storage is refused. The command asks you to type the project name to confirm; `--yes` skips that.
+
+> [!CAUTION]
+> Deleting a project retires its name for good. No one can create a project with that name again, not even you.
 
 ### Services
 
