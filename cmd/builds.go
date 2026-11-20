@@ -32,7 +32,7 @@ func validateServiceKind(kind string) error {
 	case "", "function", "batch":
 		return nil
 	default:
-		return fmt.Errorf("unknown service kind %q, want \"function\" or \"batch\"", kind)
+		return newError(kindInvalid, "unknown service kind %q, want \"function\" or \"batch\"", kind)
 	}
 }
 
@@ -78,7 +78,13 @@ var buildAbortCmd = &cobra.Command{
 		if len(args) < 1 {
 			args = append(args, "")
 		}
-		return client.AbortBuild(cfg.Project(), cfg.Service(), args[0])
+		if err := client.AbortBuild(cfg.Project(), cfg.Service(), args[0]); err != nil {
+			return err
+		}
+		return result(struct {
+			Build   string `json:"build"`
+			Aborted bool   `json:"aborted"`
+		}{args[0], true}, func(io.Writer) error { return nil })
 	}),
 }
 
@@ -151,21 +157,18 @@ var buildLogsCmd = &cobra.Command{
 		if len(args) > 0 {
 			prefix = args[0]
 		}
-		builds, err := client.ListBuilds(cfg.Project(), cfg.Service(), prefix)
+		latestBuildID, err := latestBuild(client, cfg, prefix)
 		if err != nil {
 			return err
 		}
-		if len(builds) == 0 {
-			return fmt.Errorf("no builds available")
-		}
-		// Sort builds by date
 		width, _, _ := term.GetSize(int(os.Stdout.Fd()))
-		sort.Slice(builds, func(i, j int) bool { return builds[i].CreatedAt.After(builds[j].CreatedAt) })
-		latestBuildID := builds[0].ID
 		consumer := func(le api.LogEntry) {
-			if logsRaw {
+			switch {
+			case outputJSON:
+				writeJSONLine(stdout, le)
+			case logsRaw:
 				fmt.Println(le.Content)
-			} else {
+			default:
 				fmt.Println(formatLogEntry(&le, width))
 			}
 		}
@@ -194,17 +197,14 @@ var buildWatchCmd = &cobra.Command{
 		if len(args) > 0 {
 			prefix = args[0]
 		}
-		builds, err := client.ListBuilds(cfg.Project(), cfg.Service(), prefix)
+		latestBuildID, err := latestBuild(client, cfg, prefix)
 		if err != nil {
 			return err
 		}
-		if len(builds) == 0 {
-			return fmt.Errorf("no builds available")
-		}
-		// Sort builds by date
-		sort.Slice(builds, func(i, j int) bool { return builds[i].CreatedAt.After(builds[j].CreatedAt) })
-		latestBuildID := builds[0].ID
 
+		if outputJSON {
+			return watchBuildJSON(client, cfg, latestBuildID)
+		}
 		if !term.IsTerminal(int(os.Stdout.Fd())) {
 			return watchBuildPlain(client, cfg, latestBuildID)
 		}
@@ -259,6 +259,34 @@ var buildWatchCmd = &cobra.Command{
 	}),
 }
 
+// latestBuild returns the ID of the newest build matching prefix.
+func latestBuild(client *api.Client, cfg config.ServiceConfig, prefix string) (string, error) {
+	builds, err := client.ListBuilds(cfg.Project(), cfg.Service(), prefix)
+	if err != nil {
+		return "", err
+	}
+	if len(builds) == 0 {
+		return "", newError(kindNotFound, "no builds available")
+	}
+	sort.Slice(builds, func(i, j int) bool { return builds[i].CreatedAt.After(builds[j].CreatedAt) })
+	return builds[0].ID, nil
+}
+
+// watchBuildJSON streams the build log as JSON lines; the exit code tells the
+// outcome.
+func watchBuildJSON(client *api.Client, cfg config.ServiceConfig, buildID string) error {
+	if err := client.StreamBuildLogs(cfg.Project(), cfg.Service(), buildID, func(le api.LogEntry) {
+		writeJSONLine(stdout, le)
+	}); err != nil {
+		return fmt.Errorf("streaming build logs: %w", err)
+	}
+	build, err := client.InspectBuild(cfg.Project(), cfg.Service(), buildID)
+	if err != nil {
+		return err
+	}
+	return buildOutcome(build)
+}
+
 // watchBuildPlain streams the build logs line by line without any cursor
 // movement, for when stdout is not a terminal (CI, pipes, redirects).
 func watchBuildPlain(client *api.Client, cfg config.ServiceConfig, buildID string) error {
@@ -285,7 +313,7 @@ func watchBuildPlain(client *api.Client, cfg config.ServiceConfig, buildID strin
 // buildOutcome turns a failed build into an error, so the exit code tells.
 func buildOutcome(build *api.Build) error {
 	if build.Status == "failed" {
-		return fmt.Errorf("build %s failed%s", build.ID, detail(build.Err))
+		return newError(kindFailed, "build %s failed%s", build.ID, detail(build.Err))
 	}
 	return nil
 }
@@ -320,8 +348,7 @@ var buildStatusCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		showBuildStatusAndExit(client, cfg, args[0])
-		return nil
+		return showBuildStatusAndExit(client, cfg, args[0])
 	}),
 }
 
@@ -334,17 +361,19 @@ func listBuilds(client *api.Client, cfg config.ServiceConfig, id string) error {
 	sort.Slice(builds, func(i, j int) bool {
 		return builds[i].CreatedAt.Before(builds[j].CreatedAt)
 	})
-	tw := ansiterm.NewTabWriter(os.Stdout, 6, 0, 1, ' ', 0)
-	fmt.Fprintln(tw, "ID\tSTATUS\tCREATED")
-	for _, b := range builds {
-		fmt.Fprintln(tw, strings.Join([]string{
-			b.ID,
-			colorize(b.Status),
-			humanize.Time(b.CreatedAt),
-		}, "\t"))
-	}
-	tw.Flush()
-	return nil
+	return result(builds, func(w io.Writer) error {
+		tw := ansiterm.NewTabWriter(w, 6, 0, 1, ' ', 0)
+		fmt.Fprintln(tw, "ID\tSTATUS\tCREATED")
+		for _, b := range builds {
+			fmt.Fprintln(tw, strings.Join([]string{
+				b.ID,
+				colorize(b.Status),
+				humanize.Time(b.CreatedAt),
+			}, "\t"))
+		}
+		tw.Flush()
+		return nil
+	})
 }
 
 func showBuildStatusAndExit(client *api.Client, cfg config.ServiceConfig, id string) error {
@@ -352,7 +381,10 @@ func showBuildStatusAndExit(client *api.Client, cfg config.ServiceConfig, id str
 	if err != nil {
 		return err
 	}
-	fmt.Fprintln(os.Stdout, colorize(build.Status))
+	result(build, func(w io.Writer) error {
+		_, err := fmt.Fprintln(w, colorize(build.Status))
+		return err
+	})
 	os.Exit(statusToExitCode(build.Status))
 	return nil
 }
@@ -362,18 +394,20 @@ func inspectBuild(client *api.Client, cfg config.ServiceConfig, id string) error
 	if err != nil {
 		return err
 	}
-	tw := tabwriter.NewWriter(os.Stdout, 0, 0, 1, ' ', 0)
-	fmt.Fprintln(tw, "ID:\t", build.ID)
-	fmt.Fprintln(tw, "Constructor:\t", build.Constructor)
-	fmt.Fprintln(tw, "CreatedAt:\t", build.CreatedAt)
-	fmt.Fprintln(tw, "Status:\t", colorize(build.Status))
-	fmt.Fprintln(tw, "Flags:\t", build.Flags)
-	fmt.Fprintln(tw, "Owner:\t", build.Owner)
-	if build.Err != "" {
-		fmt.Fprintln(tw, "Err:\t", build.Err)
-	}
-	tw.Flush()
-	return nil
+	return result(build, func(w io.Writer) error {
+		tw := tabwriter.NewWriter(w, 0, 0, 1, ' ', 0)
+		fmt.Fprintln(tw, "ID:\t", build.ID)
+		fmt.Fprintln(tw, "Constructor:\t", build.Constructor)
+		fmt.Fprintln(tw, "CreatedAt:\t", build.CreatedAt)
+		fmt.Fprintln(tw, "Status:\t", colorize(build.Status))
+		fmt.Fprintln(tw, "Flags:\t", build.Flags)
+		fmt.Fprintln(tw, "Owner:\t", build.Owner)
+		if build.Err != "" {
+			fmt.Fprintln(tw, "Err:\t", build.Err)
+		}
+		tw.Flush()
+		return nil
+	})
 }
 
 // deployBuild deploys a build, or without one redeploys the active build with
@@ -396,8 +430,10 @@ func deployBuild(client *api.Client, cfg *config.ValidatedServiceConfig, id stri
 	if err != nil {
 		return err
 	}
-	fmt.Fprintln(w, deployment.Version)
-	return nil
+	return emit(w, deployment, func(w io.Writer) error {
+		_, err := fmt.Fprintln(w, deployment.Version)
+		return err
+	})
 }
 
 // newBuildRequest carries the inline lists of .valar.yml only for servers that
@@ -505,7 +541,12 @@ var buildPushCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		fmt.Println(build.ID)
+		if err := result(build, func(w io.Writer) error {
+			_, err := fmt.Fprintln(w, build.ID)
+			return err
+		}); err != nil {
+			return err
+		}
 		if !buildPushWait {
 			return nil
 		}

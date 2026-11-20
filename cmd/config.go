@@ -3,7 +3,10 @@ package cmd
 import (
 	"bufio"
 	"fmt"
+	"io"
+	"maps"
 	"os"
+	"slices"
 	"strings"
 
 	"github.com/juju/ansiterm"
@@ -44,10 +47,23 @@ var configViewCmd = &cobra.Command{
 	Use:   "view",
 	Short: "View the merged configuration as YAML.",
 	Run: func(cmd *cobra.Command, args []string) {
+		if outputJSON {
+			writeJSON(stdout, globalConfiguration)
+			return
+		}
 		enc := yaml.NewEncoder(os.Stdout)
 		enc.SetIndent(2)
 		enc.Encode(globalConfiguration)
 	},
+}
+
+var configSchemaCmd = &cobra.Command{
+	Use:   "schema",
+	Short: "Print the JSON Schema of .valar.yml.",
+	Args:  cobra.NoArgs,
+	Run: runAndHandle(func(cmd *cobra.Command, args []string) error {
+		return writeJSON(stdout, config.Schema())
+	}),
 }
 
 var configEndpointCmd = &cobra.Command{
@@ -55,6 +71,20 @@ var configEndpointCmd = &cobra.Command{
 	Short: "Manage API endpoints.",
 	Args:  cobra.NoArgs,
 	Run: func(cmd *cobra.Command, args []string) {
+		if outputJSON {
+			type endpoint struct {
+				Name  string `json:"name"`
+				URL   string `json:"url"`
+				Token string `json:"token"`
+			}
+			list := []endpoint{}
+			for _, name := range slices.Sorted(maps.Keys(globalConfiguration.Endpoints)) {
+				ep := globalConfiguration.Endpoints[name]
+				list = append(list, endpoint{name, ep.URL, ep.Token})
+			}
+			writeJSON(stdout, list)
+			return
+		}
 		tw := ansiterm.NewTabWriter(os.Stdout, 6, 0, 1, ' ', 0)
 		fmt.Fprintln(tw, "NAME\tURL\tTOKEN")
 		for name, ep := range globalConfiguration.Endpoints {
@@ -83,9 +113,12 @@ var configEndpointSetCmd = &cobra.Command{
 		}
 		globalConfiguration.Endpoints[args[0]] = ep
 		if err := globalConfiguration.Write(); err != nil {
-			return fmt.Errorf("write config: %w", err)
+			return writeConfigError(err)
 		}
-		return nil
+		return result(struct {
+			Name string `json:"name"`
+			URL  string `json:"url"`
+		}{args[0], ep.URL}, func(io.Writer) error { return nil })
 	},
 }
 
@@ -96,9 +129,9 @@ var configEndpointRemoveCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		delete(globalConfiguration.Endpoints, args[0])
 		if err := globalConfiguration.Write(); err != nil {
-			return fmt.Errorf("write config: %w", err)
+			return writeConfigError(err)
 		}
-		return nil
+		return result(removed{args[0], true}, func(io.Writer) error { return nil })
 	},
 }
 
@@ -107,6 +140,15 @@ var configContextCmd = &cobra.Command{
 	Short: "Manage CLI contexts.",
 	Args:  cobra.NoArgs,
 	Run: func(cmd *cobra.Command, args []string) {
+		if outputJSON {
+			list := []contextEntry{}
+			for _, name := range slices.Sorted(maps.Keys(globalConfiguration.Contexts)) {
+				ctx := globalConfiguration.Contexts[name]
+				list = append(list, contextEntry{name, ctx.Endpoint, ctx.Project, name == globalConfiguration.ActiveContext})
+			}
+			writeJSON(stdout, list)
+			return
+		}
 		tw := ansiterm.NewTabWriter(os.Stdout, 6, 0, 1, ' ', 0)
 		fmt.Fprintln(tw, "ACTIVE\tNAME\tENDPOINT\tPROJECT")
 		for name, ctx := range globalConfiguration.Contexts {
@@ -127,9 +169,10 @@ var configContextUseCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		globalConfiguration.ActiveContext = args[0]
 		if err := globalConfiguration.Write(); err != nil {
-			return fmt.Errorf("write config: %w", err)
+			return writeConfigError(err)
 		}
-		return nil
+		ctx := globalConfiguration.Contexts[args[0]]
+		return result(contextEntry{args[0], ctx.Endpoint, ctx.Project, true}, func(io.Writer) error { return nil })
 	},
 }
 
@@ -149,9 +192,9 @@ var configContextSetCmd = &cobra.Command{
 		}
 		globalConfiguration.Contexts[args[0]] = ctx
 		if err := globalConfiguration.Write(); err != nil {
-			return fmt.Errorf("write config: %w", err)
+			return writeConfigError(err)
 		}
-		return nil
+		return result(contextEntry{args[0], ctx.Endpoint, ctx.Project, args[0] == globalConfiguration.ActiveContext}, func(io.Writer) error { return nil })
 	},
 }
 
@@ -162,10 +205,28 @@ var configContextRemoveCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		delete(globalConfiguration.Contexts, args[0])
 		if err := globalConfiguration.Write(); err != nil {
-			return fmt.Errorf("write config: %w", err)
+			return writeConfigError(err)
 		}
-		return nil
+		return result(removed{args[0], true}, func(io.Writer) error { return nil })
 	},
+}
+
+type contextEntry struct {
+	Name     string `json:"name"`
+	Endpoint string `json:"endpoint"`
+	Project  string `json:"project"`
+	Active   bool   `json:"active"`
+}
+
+type removed struct {
+	Name    string `json:"name"`
+	Removed bool   `json:"removed"`
+}
+
+// writeConfigError is a failure, unlike the other errors of the RunE config
+// commands, which reject their input.
+func writeConfigError(err error) error {
+	return withKind(kindFailed, fmt.Errorf("write config: %w", err))
 }
 
 var configInitUrl, configInitToken, configInitProject, configInitName string
@@ -246,10 +307,10 @@ var configInitCmd = &cobra.Command{
 		}
 		globalConfiguration.ActiveContext = nameValue
 		if err := globalConfiguration.Write(); err != nil {
-			return fmt.Errorf("write config: %w", err)
+			return writeConfigError(err)
 		}
 		fmt.Fprintf(os.Stderr, "Configuration written to %s.\n", globalConfiguration.Path)
-		return nil
+		return result(contextEntry{nameValue, nameValue, projectValue, true}, func(io.Writer) error { return nil })
 	},
 }
 
@@ -272,5 +333,6 @@ func initConfigCmd() {
 	configCmd.AddCommand(configContextCmd)
 	configCmd.AddCommand(configEndpointCmd)
 	configCmd.AddCommand(configViewCmd)
+	configCmd.AddCommand(configSchemaCmd)
 	rootCmd.AddCommand(configCmd)
 }

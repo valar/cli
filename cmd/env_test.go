@@ -231,7 +231,7 @@ func TestImportEnv(t *testing.T) {
 		"PATCH /projects/p/services/s/env": `{"skipped":[]}`,
 	})
 	var out bytes.Buffer
-	if err := importEnv(client, cfg, &out); err != nil {
+	if _, err := importEnv(client, cfg, &out); err != nil {
 		t.Fatalf("importEnv: %v", err)
 	}
 
@@ -286,7 +286,7 @@ func TestImportEnv_ReportsSkipped(t *testing.T) {
 		"PATCH /projects/p/services/s/env": `{"skipped":["B"]}`,
 	})
 	var out bytes.Buffer
-	if err := importEnv(client, cfg, &out); err != nil {
+	if _, err := importEnv(client, cfg, &out); err != nil {
 		t.Fatalf("importEnv: %v", err)
 	}
 	if !strings.Contains(out.String(), "Imported the plain runtime variables A.") || !strings.Contains(out.String(), "Left B as stored") {
@@ -297,7 +297,7 @@ func TestImportEnv_ReportsSkipped(t *testing.T) {
 func TestImportEnv_OldServerChangesNothing(t *testing.T) {
 	cfg, path := writeServiceConfig(t, importConfig)
 	client, requests := newFakeAPI(t, nil)
-	err := importEnv(client, cfg, io.Discard)
+	_, err := importEnv(client, cfg, io.Discard)
 	if !errors.Is(err, api.ErrNoEnvAPI) {
 		t.Fatalf("got %v, want ErrNoEnvAPI", err)
 	}
@@ -314,7 +314,7 @@ func TestImportEnv_OldServerChangesNothing(t *testing.T) {
 func TestImportEnv_NothingToImport(t *testing.T) {
 	cfg, _ := writeServiceConfig(t, "project: p\nservice: s\nbuild:\n    environment: []\ndeployment:\n    environment: []\n")
 	client, requests := newFakeAPI(t, nil)
-	if err := importEnv(client, cfg, io.Discard); err != nil {
+	if _, err := importEnv(client, cfg, io.Discard); err != nil {
 		t.Fatalf("importEnv: %v", err)
 	}
 	if len(*requests) != 0 {

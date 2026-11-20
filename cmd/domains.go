@@ -2,7 +2,7 @@ package cmd
 
 import (
 	"fmt"
-	"os"
+	"io"
 	"strings"
 
 	"github.com/juju/ansiterm"
@@ -39,18 +39,19 @@ var domainsListCmd = &cobra.Command{
 		}
 		// Sort domains before printing them out
 		slices.SortFunc(doms, func(a, b api.Domain) int { return strings.Compare(a.Domain, b.Domain) })
-		// Print them pretty
-		tw := ansiterm.NewTabWriter(os.Stdout, 6, 0, 1, ' ', 0)
-		fmt.Fprintln(tw, "DOMAIN\tVERIFIED\tSERVICE\tERROR")
-		for _, d := range doms {
-			svc := "<none>"
-			if d.Service != nil {
-				svc = *d.Service
+		return result(doms, func(w io.Writer) error {
+			tw := ansiterm.NewTabWriter(w, 6, 0, 1, ' ', 0)
+			fmt.Fprintln(tw, "DOMAIN\tVERIFIED\tSERVICE\tERROR")
+			for _, d := range doms {
+				svc := "<none>"
+				if d.Service != nil {
+					svc = *d.Service
+				}
+				fmt.Fprintf(tw, "%s\t%v\t%s\t%s\n", d.Domain, d.Verified, svc, d.Error)
 			}
-			fmt.Fprintf(tw, "%s\t%v\t%s\t%s\n", d.Domain, d.Verified, svc, d.Error)
-		}
-		tw.Flush()
-		return nil
+			tw.Flush()
+			return nil
+		})
 	}),
 }
 
@@ -72,14 +73,18 @@ var domainsAddCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		fmt.Println("Please set the following records (choose one for A/AAAA and CNAME):")
-		fmt.Println()
-		tw := ansiterm.NewTabWriter(os.Stdout, 6, 0, 1, ' ', 0)
-		for rt, rr := range records {
-			fmt.Fprintf(tw, "%s\t%s\n", rt, rr)
-		}
-		tw.Flush()
-		return nil
+		return result(struct {
+			Domain  string            `json:"domain"`
+			Records map[string]string `json:"records"`
+		}{args[0], records}, func(w io.Writer) error {
+			fmt.Fprintln(w, "Please set the following records (choose one for A/AAAA and CNAME):")
+			fmt.Fprintln(w)
+			tw := ansiterm.NewTabWriter(w, 6, 0, 1, ' ', 0)
+			for rt, rr := range records {
+				fmt.Fprintf(tw, "%s\t%s\n", rt, rr)
+			}
+			return tw.Flush()
+		})
 	}),
 }
 
@@ -100,7 +105,10 @@ var domainsDeleteCmd = &cobra.Command{
 		if err := client.DeleteDomain(cfg.Project(), args[0]); err != nil {
 			return err
 		}
-		return nil
+		return result(struct {
+			Domain  string `json:"domain"`
+			Deleted bool   `json:"deleted"`
+		}{args[0], true}, func(io.Writer) error { return nil })
 	}),
 }
 
@@ -122,8 +130,10 @@ var domainsVerifyCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		fmt.Println("Verified until", dom.Expiration)
-		return nil
+		return result(dom, func(w io.Writer) error {
+			_, err := fmt.Fprintln(w, "Verified until", dom.Expiration)
+			return err
+		})
 	}),
 }
 
@@ -144,12 +154,15 @@ var domainsLinkCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		return client.LinkDomain(api.LinkDomainArgs{
+		if err := client.LinkDomain(api.LinkDomainArgs{
 			Project:              cfg.Project(),
 			Service:              cfg.Service(),
 			Domain:               args[0],
 			AllowInsecureTraffic: domainsLinkAllowInsecureTraffic,
-		})
+		}); err != nil {
+			return err
+		}
+		return result(domainLink{args[0], cfg.Service(), true}, func(io.Writer) error { return nil })
 	}),
 }
 
@@ -169,12 +182,21 @@ var domainsUnlinkCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		return client.UnlinkDomain(api.UnlinkDomainArgs{
+		if err := client.UnlinkDomain(api.UnlinkDomainArgs{
 			Project: cfg.Project(),
 			Service: cfg.Service(),
 			Domain:  args[0],
-		})
+		}); err != nil {
+			return err
+		}
+		return result(domainLink{args[0], cfg.Service(), false}, func(io.Writer) error { return nil })
 	}),
+}
+
+type domainLink struct {
+	Domain  string `json:"domain"`
+	Service string `json:"service"`
+	Linked  bool   `json:"linked"`
 }
 
 func initDomainsCmd() {

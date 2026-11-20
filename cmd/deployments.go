@@ -62,7 +62,7 @@ service's current runtime variables, for example after 'valar env set'.`,
 		if len(args) > 0 {
 			build = args[0]
 		}
-		return deployBuild(client, cfg, build, os.Stdout)
+		return deployBuild(client, cfg, build, stdout)
 	}),
 }
 
@@ -89,7 +89,7 @@ from the current ones. With --env current, it gets the current variables.`,
 		if err != nil {
 			return err
 		}
-		return rollbackLatestDeployment(client, cfg, rollbackDelta, rollbackEnv, os.Stdout, os.Stderr)
+		return rollbackLatestDeployment(client, cfg, rollbackDelta, rollbackEnv, stdout, os.Stderr)
 	}),
 }
 
@@ -108,14 +108,14 @@ func rollbackLatestDeployment(client *api.Client, cfg config.ServiceConfig, delt
 			return fmt.Errorf("--env current needs Valar platform %s or newer with the environment API enabled", api.EnvMinPlatform)
 		}
 	default:
-		return fmt.Errorf("unknown --env %q, want %q or %q", env, api.RollbackEnvPinned, api.RollbackEnvCurrent)
+		return newError(kindInvalid, "unknown --env %q, want %q or %q", env, api.RollbackEnvPinned, api.RollbackEnvCurrent)
 	}
 	deployments, err := client.ListDeployments(cfg.Project(), cfg.Service())
 	if err != nil {
 		return err
 	}
 	if len(deployments) < delta+1 {
-		return fmt.Errorf("not enough deployments available")
+		return newError(kindNotFound, "not enough deployments available")
 	}
 	// Sort by version (desc)
 	sort.Slice(deployments, func(i, j int) bool {
@@ -129,7 +129,12 @@ func rollbackLatestDeployment(client *api.Client, cfg config.ServiceConfig, delt
 	if err != nil {
 		return err
 	}
-	fmt.Fprintln(stdout, result.Version)
+	if err := emit(stdout, result, func(w io.Writer) error {
+		_, err := fmt.Fprintln(w, result.Version)
+		return err
+	}); err != nil {
+		return err
+	}
 	if len(result.Changed) > 0 {
 		fmt.Fprintf(stderr, "The environment of version %d differs from the current one in %s.\n", target, strings.Join(result.Changed, ", "))
 	}
@@ -145,19 +150,21 @@ func listDeployments(client *api.Client, cfg config.ServiceConfig) error {
 	sort.Slice(deployments, func(i, j int) bool {
 		return deployments[i].Version < deployments[j].Version
 	})
-	tw := ansiterm.NewTabWriter(os.Stdout, 6, 0, 1, ' ', 0)
-	fmt.Fprintln(tw, "VERSION\tSTATUS\tCREATED\tBUILD\tERROR")
-	for _, d := range deployments {
-		fmt.Fprintln(tw, strings.Join([]string{
-			strconv.FormatInt(d.Version, 10),
-			colorize(d.Status),
-			humanize.Time(d.CreatedAt),
-			d.Build,
-			d.Error,
-		}, "\t"))
-	}
-	tw.Flush()
-	return nil
+	return result(deployments, func(w io.Writer) error {
+		tw := ansiterm.NewTabWriter(w, 6, 0, 1, ' ', 0)
+		fmt.Fprintln(tw, "VERSION\tSTATUS\tCREATED\tBUILD\tERROR")
+		for _, d := range deployments {
+			fmt.Fprintln(tw, strings.Join([]string{
+				strconv.FormatInt(d.Version, 10),
+				colorize(d.Status),
+				humanize.Time(d.CreatedAt),
+				d.Build,
+				d.Error,
+			}, "\t"))
+		}
+		tw.Flush()
+		return nil
+	})
 }
 
 func initDeploymentsCmd() {

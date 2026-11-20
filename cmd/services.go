@@ -39,7 +39,7 @@ var serviceInitCmd = &cobra.Command{
 			initProject = globalConfiguration.Project()
 		}
 		if err := api.VerifyNames(initProject, args[0]); err != nil {
-			return fmt.Errorf("bad naming scheme: %w", err)
+			return newError(kindInvalid, "bad naming scheme: %w", err)
 		}
 		cfg := &config.ServiceConfigYAML{
 			Project: initProject,
@@ -51,9 +51,12 @@ var serviceInitCmd = &cobra.Command{
 			Deployment: &config.DeploymentConfig{},
 		}
 		if _, err := os.Stat(functionConfiguration); err == nil && !initForce {
-			return fmt.Errorf("configuration already exists, please use --force flag to override")
+			return newError(kindConflict, "configuration already exists, please use --force flag to override")
 		}
-		return cfg.WriteToFile(functionConfiguration)
+		if err := cfg.WriteToFile(functionConfiguration); err != nil {
+			return err
+		}
+		return result(cfg, func(io.Writer) error { return nil })
 	}),
 }
 
@@ -81,20 +84,22 @@ var serviceListCmd = &cobra.Command{
 		sort.Slice(services, func(i, j int) bool {
 			return services[i].DeployedAt.Before(services[j].DeployedAt)
 		})
-		tw := tabwriter.NewWriter(os.Stdout, 0, 0, 1, ' ', 0)
-		fmt.Fprintln(tw, "NAME\tKIND\tVERSION\tCREATED\tLAST DEPLOYED\tDOMAINS")
-		for _, svc := range services {
-			fmt.Fprintln(tw, strings.Join([]string{
-				svc.Name,
-				serviceKind(svc.Kind),
-				deployedVersion(svc),
-				humanize.Time(svc.CreatedAt),
-				lastDeployed(svc),
-				strings.Join(svc.Domains, " "),
-			}, "\t"))
-		}
-		tw.Flush()
-		return nil
+		return result(services, func(w io.Writer) error {
+			tw := tabwriter.NewWriter(w, 0, 0, 1, ' ', 0)
+			fmt.Fprintln(tw, "NAME\tKIND\tVERSION\tCREATED\tLAST DEPLOYED\tDOMAINS")
+			for _, svc := range services {
+				fmt.Fprintln(tw, strings.Join([]string{
+					svc.Name,
+					serviceKind(svc.Kind),
+					deployedVersion(svc),
+					humanize.Time(svc.CreatedAt),
+					lastDeployed(svc),
+					strings.Join(svc.Domains, " "),
+				}, "\t"))
+			}
+			tw.Flush()
+			return nil
+		})
 	}),
 }
 
@@ -156,7 +161,11 @@ var serviceLogsCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		return client.StreamServiceLogs(cfg.Project(), cfg.Service(), os.Stdout, serviceLogsFollow, serviceLogsTail, serviceLogsLines)
+		w, flush := logOutput()
+		if err := client.StreamServiceLogs(cfg.Project(), cfg.Service(), w, serviceLogsFollow, serviceLogsTail, serviceLogsLines); err != nil {
+			return err
+		}
+		return flush()
 	}),
 }
 
@@ -175,7 +184,10 @@ var serviceDisableCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		return client.ChangeServiceStatus(cfg.Project(), cfg.Service(), true)
+		if err := client.ChangeServiceStatus(cfg.Project(), cfg.Service(), true); err != nil {
+			return err
+		}
+		return result(serviceStatus{cfg.Project(), cfg.Service(), true}, func(io.Writer) error { return nil })
 	}),
 }
 
@@ -194,8 +206,17 @@ var serviceEnableCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		return enableService(client, cfg.Project(), cfg.Service(), os.Stderr)
+		if err := enableService(client, cfg.Project(), cfg.Service(), os.Stderr); err != nil {
+			return err
+		}
+		return result(serviceStatus{cfg.Project(), cfg.Service(), false}, func(io.Writer) error { return nil })
 	}),
+}
+
+type serviceStatus struct {
+	Project  string `json:"project"`
+	Service  string `json:"service"`
+	Disabled bool   `json:"disabled"`
 }
 
 // enableRetryWindow bounds how long enabling retries while the platform still
@@ -245,12 +266,16 @@ var serviceURLCmd = &cobra.Command{
 			}
 			urls := serviceURLs(project, svc)
 			if len(urls) == 0 {
-				return fmt.Errorf("service %s has no domains yet; it gets them with its first deployment", service)
+				return newError(kindNotFound, "service %s has no domains yet; it gets them with its first deployment", service)
 			}
-			fmt.Println(strings.Join(urls, "\n"))
-			return nil
+			return result(struct {
+				URLs []string `json:"urls"`
+			}{urls}, func(w io.Writer) error {
+				_, err := fmt.Fprintln(w, strings.Join(urls, "\n"))
+				return err
+			})
 		}
-		return fmt.Errorf("service %s not found", service)
+		return newError(kindNotFound, "service %s not found", service)
 	}),
 }
 

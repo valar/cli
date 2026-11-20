@@ -11,8 +11,9 @@ import (
 )
 
 type EnvironmentConfig struct {
-	Key, Value string
-	Secret     bool
+	Key    string `json:"key"`
+	Value  string `json:"value"`
+	Secret bool   `json:"secret"`
 }
 
 func (e *EnvironmentConfig) MarshalYAML() (interface{}, error) {
@@ -58,14 +59,21 @@ func (e *EnvironmentConfig) UnmarshalYAML(value *yaml.Node) error {
 }
 
 type BuildConfig struct {
-	Constructor string              `yaml:"constructor,omitempty"`
-	Ignore      []string            `yaml:"ignore"`
-	Environment []EnvironmentConfig `yaml:"environment"`
+	Constructor string              `yaml:"constructor,omitempty" json:"constructor" doc:"Constructor that builds the service, such as go, node, python, static or docker."`
+	Ignore      []string            `yaml:"ignore" json:"ignore" doc:"Path prefixes, relative to the pushed folder, left out of the upload."`
+	Environment []EnvironmentConfig `yaml:"environment" json:"environment" doc:"Deprecated: build variables are stored by the platform, see 'valar env'. Move them with 'valar env import'."`
 }
 
 type DeploymentConfig struct {
-	Skip        bool                `yaml:"skip"`
-	Environment []EnvironmentConfig `yaml:"environment"`
+	Skip        bool                `yaml:"skip" json:"skip" doc:"Build without deploying."`
+	Environment []EnvironmentConfig `yaml:"environment" json:"environment" doc:"Deprecated: runtime variables are stored by the platform, see 'valar env'. Move them with 'valar env import'."`
+}
+
+// Abort reports a missing setting and ends the process. The CLI replaces it to
+// apply its exit codes and output format.
+var Abort = func(msg string) {
+	fmt.Fprintln(os.Stderr, msg)
+	os.Exit(1)
 }
 
 type ServiceConfig interface {
@@ -81,32 +89,28 @@ type ValidatedServiceConfig struct {
 
 func (w *ValidatedServiceConfig) Project() string {
 	if w.yaml.Project == "" {
-		fmt.Fprintln(os.Stderr, "Operation requires service project.")
-		os.Exit(1)
+		Abort("Operation requires service project.")
 	}
 	return w.yaml.Project
 }
 
 func (w *ValidatedServiceConfig) Service() string {
 	if w.yaml.Service == "" {
-		fmt.Fprintln(os.Stderr, "Operation requires service reference (may be specified using --service).")
-		os.Exit(1)
+		Abort("Operation requires service reference (may be specified using --service).")
 	}
 	return w.yaml.Service
 }
 
 func (w *ValidatedServiceConfig) Build() BuildConfig {
 	if w.yaml.Build == nil {
-		fmt.Fprintln(os.Stderr, "Operation requires build specification.")
-		os.Exit(1)
+		Abort("Operation requires build specification.")
 	}
 	return *w.yaml.Build
 }
 
 func (w *ValidatedServiceConfig) Deployment() DeploymentConfig {
 	if w.yaml.Deployment == nil {
-		fmt.Fprintln(os.Stderr, "Operation requires deployment specification.")
-		os.Exit(1)
+		Abort("Operation requires deployment specification.")
 	}
 	return *w.yaml.Deployment
 }
@@ -143,12 +147,12 @@ func NewServiceConfigWithFallback(path string, service *string, cli *CLIConfig) 
 }
 
 type ServiceConfigYAML struct {
-	Project    string            `yaml:"project,omitempty"`
-	Service    string            `yaml:"service,omitempty"`
-	Build      *BuildConfig      `yaml:"build"`
-	Deployment *DeploymentConfig `yaml:"deployment"`
+	Project    string            `yaml:"project,omitempty" json:"project" doc:"Project the service belongs to."`
+	Service    string            `yaml:"service,omitempty" json:"service" doc:"Name of the service."`
+	Build      *BuildConfig      `yaml:"build" json:"build" doc:"How the service is built."`
+	Deployment *DeploymentConfig `yaml:"deployment" json:"deployment" doc:"How builds are deployed."`
 
-	filePath string `yaml:"-"`
+	filePath string
 }
 
 func (config *ServiceConfigYAML) ReadFromFile(name string) error {
@@ -167,9 +171,15 @@ func (config *ServiceConfigYAML) ReadFromFile(name string) error {
 			continue
 		}
 		defer fd.Close()
-		decoder := yaml.NewDecoder(fd)
-		if err := decoder.Decode(config); err != nil {
-			return fmt.Errorf("config read: %w", err)
+		var doc yaml.Node
+		if err := yaml.NewDecoder(fd).Decode(&doc); err != nil {
+			return &Error{Path: path, Err: fmt.Errorf("config read: %w", err)}
+		}
+		if err := validate(&doc, Schema()); err != nil {
+			return &Error{Path: path, Err: fmt.Errorf("%s: %w", path, err)}
+		}
+		if err := doc.Decode(config); err != nil {
+			return &Error{Path: path, Err: fmt.Errorf("config read: %w", err)}
 		}
 		config.filePath = path
 		return nil

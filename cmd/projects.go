@@ -40,7 +40,7 @@ project without a token.`,
 			if err != nil {
 				return err
 			}
-			return createProject(client, args[0], projectsCreatePublic, os.Stdout)
+			return createProject(client, args[0], projectsCreatePublic, stdout)
 		}),
 	}
 
@@ -62,7 +62,13 @@ for the project name to confirm, unless --yes is given.`,
 			if projectsDeleteYes {
 				confirm = nil
 			}
-			return deleteProject(client, args[0], confirm, os.Stderr)
+			if err := deleteProject(client, args[0], confirm, os.Stderr); err != nil {
+				return err
+			}
+			return result(struct {
+				Name    string `json:"name"`
+				Deleted bool   `json:"deleted"`
+			}{args[0], true}, func(io.Writer) error { return nil })
 		}),
 	}
 )
@@ -72,6 +78,10 @@ func createProject(client *api.Client, name string, public bool, w io.Writer) er
 	if err != nil {
 		return err
 	}
+	return emit(w, project, func(w io.Writer) error { return printProject(project, w) })
+}
+
+func printProject(project *api.Project, w io.Writer) error {
 	tw := ansiterm.NewTabWriter(w, 6, 0, 1, ' ', 0)
 	fmt.Fprintf(tw, "Project:\t%s\n", project.Name)
 	fmt.Fprintf(tw, "Creator:\t%s\n", project.Creator)
@@ -87,14 +97,14 @@ func createProject(client *api.Client, name string, public bool, w io.Writer) er
 // confirm is nil.
 func deleteProject(client *api.Client, name string, confirm io.Reader, w io.Writer) error {
 	if err := api.VerifyProjectName(name); err != nil {
-		return err
+		return withKind(kindInvalid, err)
 	}
 	if confirm != nil {
 		fmt.Fprintf(w, "Deleting project %s retires its name for good: no project can use it again.\n", name)
 		fmt.Fprint(w, "Type the project name to confirm: ")
 		line, _ := bufio.NewReader(confirm).ReadString('\n')
 		if strings.TrimSpace(line) != name {
-			return fmt.Errorf("aborted: the input does not match %s, pass --yes to skip the confirmation", name)
+			return newError(kindInvalid, "aborted: the input does not match %s, pass --yes to skip the confirmation", name)
 		}
 	}
 	if err := client.DeleteProject(name); err != nil {
@@ -122,7 +132,7 @@ var (
 			if len(args) == 1 {
 				subargs := strings.SplitN(args[0], ":", 2)
 				if len(subargs) != 2 {
-					return fmt.Errorf("expect path to be in the form namespace:prefix")
+					return newError(kindInvalid, "expect path to be in the form namespace:prefix")
 				}
 				namespace, prefix = subargs[0], subargs[1]
 			}
@@ -130,13 +140,15 @@ var (
 			if err != nil {
 				return err
 			}
-			tw := tabwriter.NewWriter(os.Stdout, 0, 0, 1, ' ', 0)
-			fmt.Fprintln(tw, "PATH\tUSER\tACTION\tSTATE")
-			for _, pm := range permissions {
-				fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", pm.Path, pm.User, pm.Action, pm.State)
-			}
-			tw.Flush()
-			return nil
+			return result(permissions, func(w io.Writer) error {
+				tw := tabwriter.NewWriter(w, 0, 0, 1, ' ', 0)
+				fmt.Fprintln(tw, "PATH\tUSER\tACTION\tSTATE")
+				for _, pm := range permissions {
+					fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", pm.Path, pm.User, pm.Action, pm.State)
+				}
+				tw.Flush()
+				return nil
+			})
 		}),
 	}
 
@@ -173,11 +185,11 @@ var (
 			}
 			path, err := api.PermissionPathFromString(args[0])
 			if err != nil {
-				return err
+				return withKind(kindInvalid, err)
 			}
 			user, err := api.PermissionUserFromString(args[1])
 			if err != nil {
-				return err
+				return withKind(kindInvalid, err)
 			}
 			permission := api.Permission{
 				Path:   path,
@@ -188,12 +200,16 @@ var (
 			if err != nil {
 				return err
 			}
-			if allowed {
-				fmt.Println("allowed")
-			} else {
-				fmt.Println("forbidden")
-			}
-			return nil
+			return result(struct {
+				Allowed bool `json:"allowed"`
+			}{allowed}, func(w io.Writer) error {
+				answer := "forbidden"
+				if allowed {
+					answer = "allowed"
+				}
+				_, err := fmt.Fprintln(w, answer)
+				return err
+			})
 		}),
 	}
 
@@ -215,11 +231,12 @@ var (
 			if err != nil {
 				return err
 			}
-			tw := ansiterm.NewTabWriter(os.Stdout, 6, 0, 1, ' ', 0)
-			fmt.Fprintf(tw, "User:\t%s\n", info.Name)
-			fmt.Fprintf(tw, "Projects:\t%s\n", strings.Join(info.Projects, ", "))
-			tw.Flush()
-			return nil
+			return result(info, func(w io.Writer) error {
+				tw := ansiterm.NewTabWriter(w, 6, 0, 1, ' ', 0)
+				fmt.Fprintf(tw, "User:\t%s\n", info.Name)
+				fmt.Fprintf(tw, "Projects:\t%s\n", strings.Join(info.Projects, ", "))
+				return tw.Flush()
+			})
 		}),
 	}
 )
@@ -236,11 +253,11 @@ func authModifyWithState(state string) func(cmd *cobra.Command, args []string) e
 		}
 		path, err := api.PermissionPathFromString(args[0])
 		if err != nil {
-			return err
+			return withKind(kindInvalid, err)
 		}
 		user, err := api.PermissionUserFromString(args[1])
 		if err != nil {
-			return err
+			return withKind(kindInvalid, err)
 		}
 		permission := api.Permission{
 			Path:   path,
@@ -252,12 +269,16 @@ func authModifyWithState(state string) func(cmd *cobra.Command, args []string) e
 		if err != nil {
 			return err
 		}
-		if modified {
-			fmt.Println("modified")
-		} else {
-			fmt.Println("unchanged")
-		}
-		return nil
+		return result(struct {
+			Modified bool `json:"modified"`
+		}{modified}, func(w io.Writer) error {
+			answer := "unchanged"
+			if modified {
+				answer = "modified"
+			}
+			_, err := fmt.Fprintln(w, answer)
+			return err
+		})
 	}
 }
 

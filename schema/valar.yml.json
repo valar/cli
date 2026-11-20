@@ -1,0 +1,118 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "build": {
+      "additionalProperties": false,
+      "description": "How the service is built.",
+      "properties": {
+        "constructor": {
+          "description": "Constructor that builds the service, such as go, node, python, static or docker.",
+          "type": "string"
+        },
+        "environment": {
+          "deprecated": true,
+          "description": "Deprecated: build variables are stored by the platform, see 'valar env'. Move them with 'valar env import'.",
+          "items": {
+            "oneOf": [
+              {
+                "description": "A plain variable as KEY=VALUE.",
+                "pattern": "^[^=]+=",
+                "type": "string"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "key": {
+                    "type": "string"
+                  },
+                  "secret": {
+                    "type": "boolean"
+                  },
+                  "value": {
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              }
+            ]
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "ignore": {
+          "description": "Path prefixes, relative to the pushed folder, left out of the upload.",
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        }
+      },
+      "type": [
+        "object",
+        "null"
+      ]
+    },
+    "deployment": {
+      "additionalProperties": false,
+      "description": "How builds are deployed.",
+      "properties": {
+        "environment": {
+          "deprecated": true,
+          "description": "Deprecated: runtime variables are stored by the platform, see 'valar env'. Move them with 'valar env import'.",
+          "items": {
+            "oneOf": [
+              {
+                "description": "A plain variable as KEY=VALUE.",
+                "pattern": "^[^=]+=",
+                "type": "string"
+              },
+              {
+                "additionalProperties": false,
+                "properties": {
+                  "key": {
+                    "type": "string"
+                  },
+                  "secret": {
+                    "type": "boolean"
+                  },
+                  "value": {
+                    "type": "string"
+                  }
+                },
+                "type": "object"
+              }
+            ]
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "skip": {
+          "description": "Build without deploying.",
+          "type": "boolean"
+        }
+      },
+      "type": [
+        "object",
+        "null"
+      ]
+    },
+    "project": {
+      "description": "Project the service belongs to.",
+      "type": "string"
+    },
+    "service": {
+      "description": "Name of the service.",
+      "type": "string"
+    }
+  },
+  "title": "Valar service configuration (.valar.yml)",
+  "type": "object"
+}
