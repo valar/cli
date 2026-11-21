@@ -125,6 +125,11 @@ func reportError(w io.Writer, err error, fallback errorKind, printed bool) int {
 	kind := classify(err, fallback)
 	var cliErr *cliError
 	silent := printed || errors.As(err, &cliErr) && cliErr.silent
+	message := err.Error()
+	var refused api.TokenRefusedError
+	if errors.As(err, &refused) {
+		message += "\n" + renewHint(refused.Endpoint)
+	}
 	switch {
 	case outputJSON:
 		var doc struct {
@@ -134,12 +139,12 @@ func reportError(w io.Writer, err error, fallback errorKind, printed bool) int {
 			} `json:"error"`
 		}
 		doc.Error.Kind = kind.String()
-		doc.Error.Message = err.Error()
+		doc.Error.Message = message
 		enc := json.NewEncoder(w)
 		enc.SetEscapeHTML(false)
 		enc.Encode(doc)
 	case !silent:
-		fmt.Fprintln(w, err)
+		fmt.Fprintln(w, message)
 	}
 	return int(kind)
 }
