@@ -44,7 +44,7 @@ func TestTokenExpiry_Reported(t *testing.T) {
 	}{
 		{"Request", "2027-02-18T10:00:00Z", http.StatusOK, func(c *Client) error { _, err := c.UserInfo(); return err }, true},
 		{"FailedRequest", "2027-02-18T10:00:00Z", http.StatusNotFound, func(c *Client) error { _, err := c.UserInfo(); return err }, true},
-		{"Stream", "2027-02-18T10:00:00Z", http.StatusOK, func(c *Client) error { return c.StreamServiceLogs("p", "s", io.Discard, false, false, 0) }, true},
+		{"Stream", "2027-02-18T10:00:00Z", http.StatusOK, func(c *Client) error { return c.StreamServiceLogs("p", "s", io.Discard, LogOptions{}) }, true},
 		{"NoHeader", "", http.StatusOK, func(c *Client) error { _, err := c.UserInfo(); return err }, false},
 		{"Malformed", "next week", http.StatusOK, func(c *Client) error { _, err := c.UserInfo(); return err }, false},
 	} {
@@ -101,7 +101,7 @@ func TestTokenRefused(t *testing.T) {
 			})
 			for name, err := range map[string]error{
 				"request": func() error { _, err := client.UserInfo(); return err }(),
-				"stream":  client.StreamServiceLogs("p", "s", io.Discard, false, false, 0),
+				"stream":  client.StreamServiceLogs("p", "s", io.Discard, LogOptions{}),
 			} {
 				var apiErr Error
 				if !errors.As(err, &apiErr) || apiErr.StatusCode != tc.Status {

@@ -123,18 +123,18 @@ func TestJSONRequested(t *testing.T) {
 	}
 }
 
-func TestJSONLineWriter(t *testing.T) {
-	var out bytes.Buffer
-	lw := &jsonLineWriter{w: &out}
+func TestLogOutput_JSON(t *testing.T) {
+	out := setJSON(t, true)
+	lw, flush := logOutput()
 	lw.Write([]byte("first\nsec"))
 	lw.Write([]byte("ond\r\n\"quoted\" <b>\nlast"))
-	if err := lw.Flush(); err != nil {
+	if err := flush(); err != nil {
 		t.Fatal(err)
 	}
-	want := `{"content":"first"}
-{"content":"second"}
-{"content":"\"quoted\" <b>"}
-{"content":"last"}
+	want := `{"line":"first"}
+{"line":"second"}
+{"line":"\"quoted\" <b>"}
+{"line":"last"}
 `
 	if out.String() != want {
 		t.Errorf("got\n%s\nwant\n%s", out.String(), want)

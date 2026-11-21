@@ -184,8 +184,10 @@ valar service list
 #### Show the logs of the latest deployment
 
 ```bash
-valar service logs [--follow] [--tail] [--skip n] [service]
+valar service logs [--follow] [--tail] [--skip n] [--all | --deployment n] [--timestamps] [--service service]
 ```
+
+`--all` shows every deployment's log, oldest first, and `--deployment` one deployment's. `--timestamps` prefixes each line with the time it was written. With `--json`, each line is a record such as `{"ts": "...", "deployment": "3", "stream": "output", "line": "..."}`; platform events have `stream: "platform"` with `event` and `attrs`, and further fields may appear. An older platform yields `{"line": "..."}` only. Following records reconnects at the end of the log, so lines written while reconnecting can be missed.
 
 #### Print a service's URLs
 

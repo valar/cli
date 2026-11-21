@@ -3,9 +3,12 @@ package api
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
+	"reflect"
 	"strconv"
 	"strings"
 	"sync"
@@ -232,6 +235,57 @@ func TestFollow_DecodesFramedResponses(t *testing.T) {
 	}
 	if got, want := out.String(), "hello\nworld\n"; got != want {
 		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
+// TestStreamServiceLogRecords_FollowReanchors covers the missing resume
+// cursor: a cut record stream reconnects at the end of the newest log.
+func TestStreamServiceLogRecords_FollowReanchors(t *testing.T) {
+	var mu sync.Mutex
+	var queries []url.Values
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		attempt := len(queries)
+		queries = append(queries, r.URL.Query())
+		mu.Unlock()
+		w.Header().Set("Content-Type", logStreamContentType)
+		switch attempt {
+		case 0:
+			fmt.Fprintln(w, `{"keepalive":true}`)
+			fmt.Fprintln(w, `{"deployment":"1","stream":"output","line":"first"}`)
+			w.(http.Flusher).Flush()
+			cutConnection(t, w)
+		case 1:
+			fmt.Fprintln(w, `{"deployment":"2","stream":"output","line":"second"}`)
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer srv.Close()
+
+	var lines []string
+	client := newTestClient(srv.URL)
+	err := client.StreamServiceLogRecords("p", "s", LogOptions{Follow: true, All: true}, func(record LogRecord) error {
+		lines = append(lines, record.Deployment+":"+record.Line)
+		return nil
+	})
+	var statusErr Error
+	if !errors.As(err, &statusErr) || statusErr.StatusCode != http.StatusNotFound {
+		t.Fatalf("got %v, want the 404 that ends the test stream", err)
+	}
+	if want := []string{"1:first", "2:second"}; strings.Join(lines, ",") != strings.Join(want, ",") {
+		t.Errorf("got %v, want %v", lines, want)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	for i, want := range []url.Values{
+		{"format": {"json"}, "all": {"true"}, "follow": {"true"}, "keepalive": {keepaliveInterval.String()}},
+		{"format": {"json"}, "seek": {"end"}, "follow": {"true"}, "keepalive": {keepaliveInterval.String()}},
+	} {
+		if !reflect.DeepEqual(queries[i], want) {
+			t.Errorf("request %d: got %v, want %v", i, queries[i], want)
+		}
 	}
 }
 
