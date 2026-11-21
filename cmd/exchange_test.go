@@ -18,7 +18,8 @@ import (
 
 const (
 	exchangePath = "/projects/acme/services/web/token-exchange"
-	exchanged    = `{"token":"valar_ut_policy","expiresAt":"2026-11-21T13:00:00Z"}`
+	policyToken  = "valar_ut_0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	exchanged    = `{"token":"` + policyToken + `","expiresAt":"2026-11-21T13:00:00Z"}`
 )
 
 // fakeJWT builds an unsigned token with claims, enough for identityHint.
@@ -54,24 +55,21 @@ func TestReadIDToken(t *testing.T) {
 	}
 	for _, tc := range []struct {
 		Name     string
-		Value    string
 		File     string
 		Stdin    string
 		Want     string
 		WantKind errorKind
 	}{
-		{Name: "Flag", Value: " from-flag\n", Want: "from-flag"},
 		{Name: "File", File: file, Want: "from-file"},
 		{Name: "Dash", File: "-", Stdin: "from-stdin\n", Want: "from-stdin"},
 		{Name: "Stdin", Stdin: "from-stdin", Want: "from-stdin"},
-		{Name: "Both", Value: "a", File: file, WantKind: kindInvalid},
 		{Name: "MissingFile", File: file + ".missing", WantKind: kindInvalid},
 		{Name: "EmptyStdin", Stdin: "\n", WantKind: kindInvalid},
 		{Name: "TooLarge", Stdin: strings.Repeat("a", maxIDToken+1), WantKind: kindInvalid},
 	} {
 		t.Run(tc.Name, func(t *testing.T) {
 			t.Setenv(envIDTokenRequestURL, "")
-			got, err := readIDToken(tc.Value, tc.File, "", valarAPI, fileWith(t, tc.Stdin))
+			got, err := readIDToken(tc.File, "", valarAPI, fileWith(t, tc.Stdin))
 			if tc.WantKind != 0 {
 				if err == nil || classify(err, kindFailed) != tc.WantKind {
 					t.Errorf("error %v of kind %v, want kind %v", err, classify(err, kindFailed), tc.WantKind)
@@ -109,7 +107,7 @@ func TestReadIDToken_GitHubActions(t *testing.T) {
 			t.Cleanup(srv.Close)
 			t.Setenv(envIDTokenRequestURL, srv.URL+"/idtoken?api-version=2.0")
 			t.Setenv(envIDTokenRequestToken, "request-secret")
-			got, err := readIDToken("", "", tc.Audience, tc.Endpoint, fileWith(t, "not read"))
+			got, err := readIDToken("", tc.Audience, tc.Endpoint, fileWith(t, "not read"))
 			if gotAudience != tc.WantAudience || gotAuth != "bearer request-secret" || gotVersion != "2.0" {
 				t.Errorf("GitHub got audience %q, Authorization %q, api-version %q", gotAudience, gotAuth, gotVersion)
 			}
@@ -164,10 +162,10 @@ func TestExchangeToken(t *testing.T) {
 		WantOut      string
 		WantProgress string
 	}{
-		{Name: "Human", WantOut: "valar_ut_policy\n", WantProgress: "Exchanged the identity token for a token for acme/web until 2026-11-21 13:00 UTC.\n"},
+		{Name: "Human", WantOut: policyToken + "\n", WantProgress: "Exchanged the identity token for a token for acme/web until 2026-11-21 13:00 UTC.\n"},
 		{
-			Name: "GitHubActions", Actions: true, WantOut: "valar_ut_policy\n",
-			WantProgress: "::add-mask::valar_ut_policy\nExchanged the identity token for a token for acme/web until 2026-11-21 13:00 UTC.\n",
+			Name: "GitHubActions", Actions: true, WantOut: policyToken + "\n",
+			WantProgress: "::add-mask::" + policyToken + "\nExchanged the identity token for a token for acme/web until 2026-11-21 13:00 UTC.\n",
 		},
 		{Name: "JSON", JSON: true},
 	} {
@@ -188,7 +186,7 @@ func TestExchangeToken(t *testing.T) {
 			}
 			if tc.JSON {
 				var doc api.ExchangedToken
-				if err := json.Unmarshal(out.Bytes(), &doc); err != nil || doc.Token != "valar_ut_policy" || doc.ExpiresAt.IsZero() {
+				if err := json.Unmarshal(out.Bytes(), &doc); err != nil || doc.Token != policyToken || doc.ExpiresAt.IsZero() {
 					t.Errorf("stdout %s decodes to %+v, %v", out.String(), doc, err)
 				}
 				return
@@ -214,14 +212,46 @@ func TestExchangeToken_Export(t *testing.T) {
 		t.Fatalf("exchangeToken: %v", err)
 	}
 	data, _ := os.ReadFile(env)
-	if string(data) != "EARLIER=1\nVALAR_TOKEN=valar_ut_policy\n" {
+	if string(data) != "EARLIER=1\nVALAR_TOKEN="+policyToken+"\n" {
 		t.Errorf("GITHUB_ENV holds %q", data)
 	}
 	if out.Len() != 0 {
 		t.Errorf("stdout %q, want nothing when exporting", out.String())
 	}
-	if !strings.HasPrefix(progress.String(), "::add-mask::valar_ut_policy\n") || !strings.Contains(progress.String(), "Set VALAR_TOKEN") {
+	if !strings.HasPrefix(progress.String(), "::add-mask::"+policyToken+"\n") || !strings.Contains(progress.String(), "Set VALAR_TOKEN") {
 		t.Errorf("progress %q, want the mask and a note", progress.String())
+	}
+}
+
+func TestExchangeToken_InvalidToken(t *testing.T) {
+	for name, token := range map[string]string{
+		"Injection": policyToken + "\nBASH_ENV=/tmp/evil",
+		"Short":     "valar_ut_0123",
+		"AgentKind": strings.Replace(policyToken, "valar_ut_", "valar_at_", 1),
+		"Empty":     "",
+	} {
+		t.Run(name, func(t *testing.T) {
+			for _, export := range []bool{false, true} {
+				setJSON(t, false)
+				env := filepath.Join(t.TempDir(), "github_env")
+				if err := os.WriteFile(env, nil, 0o600); err != nil {
+					t.Fatal(err)
+				}
+				t.Setenv("GITHUB_ENV", env)
+				t.Setenv("GITHUB_ACTIONS", "true")
+				body, _ := json.Marshal(map[string]string{"token": token, "expiresAt": "2026-11-21T13:00:00Z"})
+				client, _ := newExchangeAPI(t, http.StatusOK, string(body))
+				var out, progress bytes.Buffer
+				err := exchangeToken(client, "acme", "web", "jwt", export, &out, &progress)
+				if err == nil || classify(err, kindFailed) != kindUnavailable {
+					t.Errorf("export %v: error %v, want unavailable", export, err)
+				}
+				data, _ := os.ReadFile(env)
+				if out.Len() != 0 || progress.Len() != 0 || len(data) != 0 {
+					t.Errorf("export %v: printed %q and %q and exported %q", export, out.String(), progress.String(), data)
+				}
+			}
+		})
 	}
 }
 
@@ -310,12 +340,16 @@ func TestAuthExchangeCommand(t *testing.T) {
 	t.Cleanup(srv.Close)
 	t.Setenv("GITHUB_ACTIONS", "")
 	t.Setenv(envIDTokenRequestURL, "")
-	t.Cleanup(func() { exchangeService, exchangeProject, exchangeIDToken = "", "", "" })
-	out := runCLI(t, srv.URL, "auth", "exchange", "--service", "api", "--id-token", "jwt")
+	t.Cleanup(func() { exchangeService, exchangeProject, exchangeIDTokenFile = "", "", "" })
+	idToken := filepath.Join(t.TempDir(), "id-token")
+	if err := os.WriteFile(idToken, []byte("jwt"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	out := runCLI(t, srv.URL, "auth", "exchange", "--service", "api", "--id-token-file", idToken)
 	if gotPath != "/projects/p/services/api/token-exchange" {
 		t.Errorf("exchanged at %q, want the project of .valar.yml and --service", gotPath)
 	}
-	if !strings.Contains(out, `"token": "valar_ut_policy"`) {
+	if !strings.Contains(out, `"token": "`+policyToken+`"`) {
 		t.Errorf("output %q lacks the token", out)
 	}
 }

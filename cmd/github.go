@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -144,14 +145,17 @@ func (p githubPolicy) build(notes io.Writer) (string, map[string]string, error) 
 		"repository": repo.FullName, "repository_owner": owner,
 		"repository_id": repoID, "repository_owner_id": ownerID,
 	}
-	context := "pull_request"
+	// scope is the claim that tells this policy's jobs apart: the branch's
+	// ref or the environment.
+	context, scope := "pull_request", ""
 	if !p.PullRequests {
 		ref := repo.DefaultBranch
 		if p.Branch != "" {
-			ref = p.Branch
+			ref, scope = p.Branch, "ref"
 			values["ref"] = "refs/heads/" + p.Branch
 			context = "ref:refs/heads/" + subjectValue(p.Branch)
 		} else {
+			scope = "environment"
 			values["environment"] = p.Environment
 			context = "environment:" + subjectValue(p.Environment)
 		}
@@ -162,6 +166,11 @@ func (p githubPolicy) build(notes io.Writer) (string, map[string]string, error) 
 	keys := []string{"repo", "context"}
 	if !tmpl.UseDefault && len(tmpl.IncludeClaimKeys) > 0 {
 		keys = tmpl.IncludeClaimKeys
+	}
+	// A subject without the context would admit jobs of any branch or
+	// environment, so the claim pins it instead.
+	if scope != "" && !slices.Contains(keys, "context") && !slices.Contains(keys, scope) {
+		claims[scope] = values[scope]
 	}
 	parts := make([]string, len(keys))
 	for i, key := range keys {

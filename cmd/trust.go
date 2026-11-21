@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -20,8 +22,16 @@ var (
 	trustIssuer  string
 	trustSubject string
 	trustClaims  []string
+	trustForce   bool
 	trustGitHub  githubPolicy
 )
+
+// riskyEvents run with the repository's credentials on input that pull
+// requests or comments control.
+var riskyEvents = []string{"pull_request_target", "workflow_run", "issue_comment"}
+
+// immutableSubject matches a GitHub subject that carries the repository's ID.
+var immutableSubject = regexp.MustCompile(`^repo:[^:/]+@[0-9]+/[^:]+@[0-9]+(:|$)`)
 
 var (
 	trustCmd = &cobra.Command{
@@ -60,8 +70,8 @@ renamed or re-registered repository or owner does not match. Give one of:
   --pull-requests
       Each pull request of the repository may deploy only the preview whose
       name is the --service prefix, which ends in *, followed by its number:
-      --service 'webpr*' admits webpr42 to pull request 42. GitHub issues no
-      identity tokens to pull requests from forks.
+      --service 'webpr*' admits webpr42 to pull request 42. A private
+      repository may give pull requests from forks identity tokens too.
 
   valar trust add --service web --github-repo acme/web --branch main --workflow deploy.yml
   valar trust add --service 'webpr*' --github-repo acme/web --pull-requests
@@ -71,14 +81,19 @@ GH_TOKEN to a GitHub token that can read it, such as GH_TOKEN=$(gh auth token).
 
 Without --github-repo, --subject is the identity token's sub claim, matched
 exactly, and each --claim k=v another claim it must carry. --issuer defaults to
-GitHub Actions' issuer and must be one the installation trusts.`,
+GitHub Actions' issuer and must be one the installation trusts.
+
+Policies for pull_request_target, workflow_run and issue_comment jobs, which
+run with the repository's credentials on input that others control, and
+hand-written ones that admit pull requests to a service rather than to its
+previews need --force.`,
 		Args: cobra.NoArgs,
 		Run: runAndHandle(func(cmd *cobra.Command, args []string) error {
 			project, err := commandProject(trustProject)
 			if err != nil {
 				return err
 			}
-			req, err := newTrustPolicyRequest(trustService, trustIssuer, trustSubject, trustClaims, trustGitHub, os.Stderr)
+			req, err := newTrustPolicyRequest(trustService, trustIssuer, trustSubject, trustClaims, trustGitHub, trustForce, os.Stderr)
 			if err != nil {
 				return err
 			}
@@ -145,9 +160,10 @@ func commandProject(flag string) (string, error) {
 }
 
 // newTrustPolicyRequest checks the flags of trust add and, with a GitHub
-// repository, asks GitHub for the subject and claims. notes receives what it
-// assumed.
-func newTrustPolicyRequest(service, issuer, subject string, claimArgs []string, github githubPolicy, notes io.Writer) (api.TrustPolicyRequest, error) {
+// repository, asks GitHub for the subject and claims. Without force, it
+// refuses policies for risky events and hand-written ones that admit pull
+// requests to a service. notes receives warnings and what it assumed.
+func newTrustPolicyRequest(service, issuer, subject string, claimArgs []string, github githubPolicy, force bool, notes io.Writer) (api.TrustPolicyRequest, error) {
 	req := api.TrustPolicyRequest{Service: service, Issuer: issuer}
 	preview, isPreview := strings.CutSuffix(service, "*")
 	switch {
@@ -167,10 +183,22 @@ func newTrustPolicyRequest(service, issuer, subject string, claimArgs []string, 
 		if subject == "" {
 			return req, newError(kindInvalid, "give --github-repo, or --subject with the identity token's sub claim")
 		}
+		if !isPreview && !force && slices.Contains(strings.Split(subject, ":"), "pull_request") {
+			return req, newError(kindInvalid, "subject %s admits every pull request of the repository to %s; use a preview prefix such as --service '%spr*', or pass --force", subject, service, service)
+		}
+		if err := allowEvent(claims["event_name"], force); err != nil {
+			return req, err
+		}
+		if strings.HasPrefix(issuer, api.GitHubIssuer) && claims["repository_id"] == "" && !immutableSubject.MatchString(subject) && !strings.Contains(subject, "repository_id:") {
+			fmt.Fprintln(notes, "Warning: the policy pins no repository ID, so a repository that later takes over the name would match. Add --claim repository_id=<id>, or use --github-repo.")
+		}
 		req.Subject, req.Claims = subject, claims
 		return req, nil
 	}
 	if err := github.check(isPreview, subject); err != nil {
+		return req, err
+	}
+	if err := allowEvent(github.Event, force); err != nil {
 		return req, err
 	}
 	sub, built, err := github.build(notes)
@@ -183,8 +211,18 @@ func newTrustPolicyRequest(service, issuer, subject string, claimArgs []string, 
 		}
 		built[k] = v
 	}
+	if err := allowEvent(built["event_name"], force); err != nil {
+		return req, err
+	}
 	req.Subject, req.Claims = sub, built
 	return req, nil
+}
+
+func allowEvent(event string, force bool) error {
+	if force || !slices.Contains(riskyEvents, event) {
+		return nil
+	}
+	return newError(kindInvalid, "%s jobs run with the repository's credentials on input that pull requests or comments control; pass --force to admit them anyway", event)
 }
 
 // check refuses flag combinations that build no sensible policy.
@@ -319,6 +357,7 @@ func initTrustCmd() {
 	add.BoolVar(&trustGitHub.PullRequests, "pull-requests", false, "With --github-repo: admit each pull request to its own preview")
 	add.StringVar(&trustGitHub.Workflow, "workflow", "", "With --branch or --environment: the workflow file, such as deploy.yml")
 	add.StringVar(&trustGitHub.Event, "event", "push", "With --branch or --environment: the event that triggers the workflow")
+	add.BoolVar(&trustForce, "force", false, "Admit pull_request_target, workflow_run or issue_comment jobs, or pull requests to a service")
 	for _, c := range []*cobra.Command{trustAddCmd, trustListCmd, trustRemoveCmd} {
 		c.Flags().StringVar(&trustProject, "project", "", "Project of the policy, instead of the active one")
 	}

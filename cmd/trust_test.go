@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"bytes"
+	"cmp"
 	"encoding/json"
 	"errors"
 	"io"
@@ -155,7 +156,7 @@ func TestNewTrustPolicyRequest_GitHub(t *testing.T) {
 			auth := fakeGitHub(t, routes, statuses)
 			tc.Policy.Repo = "acme/web"
 			var notes bytes.Buffer
-			req, err := newTrustPolicyRequest(tc.Service, api.GitHubIssuer, "", tc.Claims, tc.Policy, &notes)
+			req, err := newTrustPolicyRequest(tc.Service, api.GitHubIssuer, "", tc.Claims, tc.Policy, false, &notes)
 			if err != nil {
 				t.Fatalf("newTrustPolicyRequest: %v", err)
 			}
@@ -227,7 +228,7 @@ func TestNewTrustPolicyRequest_Refused(t *testing.T) {
 			if tc.Policy.Event == "" && tc.Policy.Repo != "" {
 				tc.Policy.Event = "push"
 			}
-			_, err := newTrustPolicyRequest(tc.Service, api.GitHubIssuer, tc.Subject, tc.Claims, tc.Policy, io.Discard)
+			_, err := newTrustPolicyRequest(tc.Service, api.GitHubIssuer, tc.Subject, tc.Claims, tc.Policy, false, io.Discard)
 			if err == nil || !strings.Contains(err.Error(), tc.Want) || classify(err, kindFailed) != tc.WantKind {
 				t.Errorf("error %v of kind %v, want kind %v containing %q", err, classify(err, kindFailed), tc.WantKind, tc.Want)
 			}
@@ -237,7 +238,7 @@ func TestNewTrustPolicyRequest_Refused(t *testing.T) {
 
 func TestNewTrustPolicyRequest_ByHand(t *testing.T) {
 	req, err := newTrustPolicyRequest("web", "https://gitlab.example.com", "project_path:acme/web:ref_type:branch:ref:main",
-		[]string{"project_id=7", "namespace_id=3"}, githubPolicy{Event: "push"}, io.Discard)
+		[]string{"project_id=7", "namespace_id=3"}, githubPolicy{Event: "push"}, false, io.Discard)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -376,7 +377,7 @@ func TestTrustCommands_OlderServer(t *testing.T) {
 func runTrustCLI(t *testing.T, endpoint string, args ...string) string {
 	t.Helper()
 	t.Cleanup(func() {
-		trustProject, trustService, trustIssuer, trustSubject, trustClaims = "", "", api.GitHubIssuer, "", nil
+		trustProject, trustService, trustIssuer, trustSubject, trustClaims, trustForce = "", "", api.GitHubIssuer, "", nil, false
 		trustGitHub = githubPolicy{Event: "push"}
 	})
 	return runCLI(t, endpoint, args...)
@@ -431,5 +432,112 @@ func TestWorkflowRef(t *testing.T) {
 		if got := workflowRef("acme/web", tc.Workflow, tc.Branch); got != tc.Want {
 			t.Errorf("workflowRef(%q, %q) = %q, want %q", tc.Workflow, tc.Branch, got, tc.Want)
 		}
+	}
+}
+
+func TestNewTrustPolicyRequest_SubjectTemplates(t *testing.T) {
+	branch := githubPolicy{Repo: "acme/web", Branch: "main", Workflow: "deploy.yml", Event: "push"}
+	env := githubPolicy{Repo: "acme/web", Environment: "prod", Workflow: "deploy.yml", Event: "push"}
+	previews := githubPolicy{Repo: "acme/web", PullRequests: true, Event: "push"}
+	for _, tc := range []struct {
+		Name        string
+		Keys        string
+		Policy      githubPolicy
+		WantSubject string
+		// WantScope is the ref or environment claim the subject leaves out.
+		WantScope map[string]string
+		WantErr   string
+	}{
+		{Name: "RepoOnlyEnvironment", Keys: `["repo"]`, Policy: env, WantSubject: "repo:Acme/Web", WantScope: map[string]string{"environment": "prod"}},
+		{Name: "RepoOnlyBranch", Keys: `["repo"]`, Policy: branch, WantSubject: "repo:Acme/Web", WantScope: map[string]string{"ref": "refs/heads/main"}},
+		{Name: "RepoOnlyPreviews", Keys: `["repo"]`, Policy: previews, WantSubject: "repo:Acme/Web"},
+		{Name: "IDsAndContext", Keys: `["repository_owner_id","repository_id","context"]`, Policy: env, WantSubject: "repository_owner_id:45:repository_id:123:environment:prod"},
+		{Name: "EnvironmentKey", Keys: `["repo","environment"]`, Policy: env, WantSubject: "repo:Acme/Web:environment:prod"},
+		{Name: "RefKey", Keys: `["repo","ref"]`, Policy: branch, WantSubject: "repo:Acme/Web:ref:refs/heads/main"},
+		{
+			Name: "OwnerAndWorkflow", Keys: `["repository_owner","workflow_ref"]`, Policy: branch,
+			WantSubject: "repository_owner:Acme:workflow_ref:Acme/Web/.github/workflows/deploy.yml@refs/heads/main",
+			WantScope:   map[string]string{"ref": "refs/heads/main"},
+		},
+		{
+			Name: "RepositoryAndEvent", Keys: `["repository","event_name"]`, Policy: env,
+			WantSubject: "repository:Acme/Web:event_name:push", WantScope: map[string]string{"environment": "prod"},
+		},
+		{Name: "EnvironmentKeyForBranch", Keys: `["repo","environment"]`, Policy: branch, WantErr: "puts environment in its OIDC subject"},
+		{Name: "RefKeyForPreviews", Keys: `["repo","ref"]`, Policy: previews, WantErr: "puts ref in its OIDC subject"},
+	} {
+		t.Run(tc.Name, func(t *testing.T) {
+			fakeGitHub(t, map[string]string{
+				repoPath: githubRepoJSON,
+				subPath:  `{"use_default":false,"include_claim_keys":` + tc.Keys + `,"sub_claim_prefix":"repo:Acme/Web"}`,
+			}, nil)
+			service := "web"
+			if tc.Policy.PullRequests {
+				service = "webpr*"
+			}
+			req, err := newTrustPolicyRequest(service, api.GitHubIssuer, "", nil, tc.Policy, false, io.Discard)
+			if tc.WantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tc.WantErr) {
+					t.Errorf("error %v, want one containing %q", err, tc.WantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if req.Subject != tc.WantSubject {
+				t.Errorf("subject %q, want %q", req.Subject, tc.WantSubject)
+			}
+			for _, k := range []string{"ref", "environment"} {
+				if req.Claims[k] != tc.WantScope[k] {
+					t.Errorf("claim %s = %q, want %q (claims %v)", k, req.Claims[k], tc.WantScope[k], req.Claims)
+				}
+			}
+		})
+	}
+}
+
+func TestNewTrustPolicyRequest_Guards(t *testing.T) {
+	const pull = "repo:acme/web:pull_request"
+	pinned := []string{"repository_id=123"}
+	for _, tc := range []struct {
+		Name     string
+		Service  string
+		Issuer   string
+		Subject  string
+		Claims   []string
+		Policy   githubPolicy
+		Force    bool
+		WantErr  string
+		WantNote bool
+	}{
+		{Name: "PullRequestsToService", Service: "web", Subject: pull, Claims: pinned, WantErr: "admits every pull request of the repository to web"},
+		{Name: "PullRequestsInCustomSubject", Service: "web", Subject: "repo:acme/web:pull_request:job_workflow_ref:x", Claims: pinned, WantErr: "admits every pull request"},
+		{Name: "PullRequestsToServiceForced", Service: "web", Subject: pull, Claims: pinned, Force: true},
+		{Name: "PullRequestsToPreviews", Service: "webpr*", Subject: pull, Claims: pinned},
+		{Name: "TargetEvent", Service: "web", Subject: "repo:acme/web:ref:refs/heads/main", Claims: []string{"repository_id=123", "event_name=pull_request_target"}, WantErr: "pull_request_target jobs"},
+		{Name: "TargetEventForced", Service: "web", Subject: "repo:acme/web:ref:refs/heads/main", Claims: []string{"repository_id=123", "event_name=issue_comment"}, Force: true},
+		{Name: "BuilderWorkflowRun", Service: "web", Policy: githubPolicy{Repo: "acme/web", Branch: "main", Workflow: "d.yml", Event: "workflow_run"}, WantErr: "workflow_run jobs"},
+		{Name: "BuilderClaimedEvent", Service: "webpr*", Claims: []string{"event_name=pull_request_target"}, Policy: githubPolicy{Repo: "acme/web", PullRequests: true, Event: "push"}, WantErr: "pull_request_target jobs"},
+		{Name: "NoRepositoryID", Service: "web", Subject: "repo:acme/web:ref:refs/heads/main", WantNote: true},
+		{Name: "ImmutableSubject", Service: "web", Subject: "repo:acme@45/web@123:ref:refs/heads/main"},
+		{Name: "RepositoryIDInSubject", Service: "web", Subject: "repository_owner_id:45:repository_id:123:ref:refs/heads/main"},
+		{Name: "OtherIssuer", Service: "web", Issuer: "https://gitlab.example.com", Subject: "project_path:acme/web:ref_type:branch:ref:main"},
+	} {
+		t.Run(tc.Name, func(t *testing.T) {
+			fakeGitHub(t, map[string]string{repoPath: githubRepoJSON, subPath: defaultSub}, nil)
+			issuer := cmp.Or(tc.Issuer, api.GitHubIssuer)
+			var notes bytes.Buffer
+			_, err := newTrustPolicyRequest(tc.Service, issuer, tc.Subject, tc.Claims, tc.Policy, tc.Force, &notes)
+			switch {
+			case tc.WantErr != "" && (err == nil || !strings.Contains(err.Error(), tc.WantErr) || classify(err, kindFailed) != kindInvalid):
+				t.Errorf("error %v, want an invalid one containing %q", err, tc.WantErr)
+			case tc.WantErr == "" && err != nil:
+				t.Errorf("error %v, want none", err)
+			}
+			if got := strings.Contains(notes.String(), "pins no repository ID"); got != tc.WantNote {
+				t.Errorf("notes %q, want the repository ID warning: %v", notes.String(), tc.WantNote)
+			}
+		})
 	}
 }

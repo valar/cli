@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"regexp"
 	"strings"
 	"time"
 
@@ -21,6 +22,10 @@ import (
 // maxIDToken is the largest identity token the platform accepts.
 const maxIDToken = 16 << 10
 
+// policyTokenPattern is the only value an exchange returns; anything else is
+// never printed or exported.
+var policyTokenPattern = regexp.MustCompile(`^valar_ut_[0-9a-f]{64}$`)
+
 // GitHub Actions sets these in jobs with permissions: id-token: write.
 const (
 	envIDTokenRequestURL   = "ACTIONS_ID_TOKEN_REQUEST_URL"
@@ -30,14 +35,13 @@ const (
 var (
 	exchangeService     string
 	exchangeProject     string
-	exchangeIDToken     string
 	exchangeIDTokenFile string
 	exchangeAudience    string
 	exchangeExport      bool
 )
 
 var authExchangeCmd = &cobra.Command{
-	Use:   "exchange [--service s] [--project p] [--id-token-file path | --id-token jwt] [--audience aud] [--export]",
+	Use:   "exchange [--service s] [--project p] [--id-token-file path] [--audience aud] [--export]",
 	Short: "Exchange a CI job's identity token for a token for one service.",
 	Long: `Exchange a CI job's identity token for a token for one service.
 
@@ -46,10 +50,10 @@ token. The token Valar returns acts as the policy's creator, bound to the
 service with read and deploy, and lasts an hour. The service and project come
 from the flags, VALAR_PROJECT or .valar.yml, as for other commands.
 
-The identity token comes from --id-token, from --id-token-file (- for stdin),
-or, in a GitHub Actions job with permissions: id-token: write, from GitHub for
---audience, which defaults to the endpoint's origin (https://api.valar.dev).
-Otherwise it is read from stdin.
+The identity token comes from --id-token-file (- for stdin), or, in a GitHub
+Actions job with permissions: id-token: write, from GitHub for --audience,
+which defaults to the endpoint's origin (https://api.valar.dev). Otherwise it
+is read from stdin.
 
 The token goes to stdout and everything else to stderr:
 
@@ -75,7 +79,7 @@ VALAR_TOKEN for the job's later steps instead of printing it.`,
 			return withKind(kindInvalid, err)
 		}
 		endpoint := globalConfiguration.EndpointOrDefault()
-		idToken, err := readIDToken(exchangeIDToken, exchangeIDTokenFile, exchangeAudience, endpoint, os.Stdin)
+		idToken, err := readIDToken(exchangeIDTokenFile, exchangeAudience, endpoint, os.Stdin)
 		if err != nil {
 			return err
 		}
@@ -87,14 +91,10 @@ VALAR_TOKEN for the job's later steps instead of printing it.`,
 	}),
 }
 
-// readIDToken returns the identity token from the flag, the file, GitHub
-// Actions or stdin, in that order.
-func readIDToken(value, file, audience, endpoint string, stdin *os.File) (string, error) {
+// readIDToken returns the identity token from the file, GitHub Actions or
+// stdin, in that order.
+func readIDToken(file, audience, endpoint string, stdin *os.File) (string, error) {
 	switch {
-	case value != "" && file != "":
-		return "", newError(kindInvalid, "give --id-token or --id-token-file, not both")
-	case value != "":
-		return strings.TrimSpace(value), nil
 	case file == "-":
 		return readIDTokenFrom(stdin, "stdin")
 	case file != "":
@@ -185,6 +185,9 @@ func exchangeToken(client *api.Client, project, service, idToken string, export 
 	if err != nil {
 		return err
 	}
+	if !policyTokenPattern.MatchString(token.Token) {
+		return newError(kindUnavailable, "the server's exchange answer holds no valid token")
+	}
 	if os.Getenv("GITHUB_ACTIONS") == "true" {
 		fmt.Fprintf(progress, "::add-mask::%s\n", token.Token)
 	}
@@ -251,7 +254,6 @@ func initExchangeCmd() {
 	f := authExchangeCmd.Flags()
 	f.StringVarP(&exchangeService, "service", "s", "", "Service to get a token for, instead of the one in .valar.yml")
 	f.StringVarP(&exchangeProject, "project", "p", "", "Project of the service, instead of the active one")
-	f.StringVar(&exchangeIDToken, "id-token", "", "The identity token")
 	f.StringVar(&exchangeIDTokenFile, "id-token-file", "", "Read the identity token from this file, or - for stdin")
 	f.StringVar(&exchangeAudience, "audience", "", "Audience of the identity token requested from GitHub Actions (default the endpoint's origin)")
 	f.BoolVar(&exchangeExport, "export", false, "In GitHub Actions, set VALAR_TOKEN for the job's later steps instead of printing it")

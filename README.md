@@ -490,12 +490,14 @@ Where the installation trusts a CI provider's identity tokens, a CI job can depl
 valar trust add [--project project] --service web --github-repo acme/web --branch main --workflow deploy.yml [--event push]
 valar trust add [--project project] --service web --github-repo acme/web --environment production --workflow deploy.yml
 valar trust add [--project project] --service 'webpr*' --github-repo acme/web --pull-requests
-valar trust add [--project project] --service web --subject sub [--claim name=value]... [--issuer url]
+valar trust add [--project project] --service web --subject sub [--claim name=value]... [--issuer url] [--force]
 ```
 
-`--github-repo` builds the policy for GitHub Actions. It reads the repository's ID, its owner's ID and its OIDC subject format from GitHub, writes the subject as GitHub will issue it (with immutable IDs where the repository uses them), and pins `repository_id` and `repository_owner_id`. A branch or environment policy also pins `event_name` (`--event`, `push` by default) and `workflow_ref` (`--workflow`), so other workflows and triggers do not match. `--workflow deploy.yml@refs/heads/release` names the ref an environment's workflow runs from; it is the default branch otherwise. Protect an environment that a policy names with deployment branch rules, because GitHub issues its subject to every job that names it.
+`--github-repo` builds the policy for GitHub Actions. It reads the repository's ID, its owner's ID and its OIDC subject format from GitHub, writes the subject as GitHub will issue it (with immutable IDs where the repository uses them), and pins `repository_id` and `repository_owner_id`. A branch or environment policy also pins `event_name` (`--event`, `push` by default) and `workflow_ref` (`--workflow`), so other workflows and triggers do not match. Where the repository's subject template leaves out the branch or environment, the policy pins it as a `ref` or `environment` claim. `--workflow deploy.yml@refs/heads/release` names the ref an environment's workflow runs from; it is the default branch otherwise. Protect an environment that a policy names with deployment branch rules, because GitHub issues its subject to every job that names it.
 
-A `--pull-requests` policy names a preview prefix followed by `*`: pull request 42 may deploy only `webpr42`. GitHub issues no identity tokens to pull requests from forks.
+A `--pull-requests` policy names a preview prefix followed by `*`: pull request 42 may deploy only `webpr42`. Public repositories give pull requests from forks no identity tokens; a private repository can, through its Actions settings, so there a fork's pull request may deploy its own preview.
+
+Unless `--force` is given, `trust add` refuses policies for `pull_request_target`, `workflow_run` and `issue_comment` jobs, which run with the repository's credentials on input that others control, and a hand-written `pull_request` subject for a service rather than a preview prefix. It warns when a hand-written GitHub policy pins no repository ID.
 
 For a private repository, set `GH_TOKEN` to a GitHub token that can read it, such as `GH_TOKEN=$(gh auth token)`. `--subject` and `--claim` set the policy by hand, for other CI providers or subject formats `--github-repo` does not know. `--issuer` defaults to `https://token.actions.githubusercontent.com`. `create` is an alias of `add`.
 
@@ -511,10 +513,10 @@ Removing a policy revokes the tokens it issued. `delete` is an alias of `remove`
 #### Exchange an identity token
 
 ```bash
-valar auth exchange [--service service] [--project project] [--id-token-file path | --id-token jwt] [--audience audience] [--export]
+valar auth exchange [--service service] [--project project] [--id-token-file path] [--audience audience] [--export]
 ```
 
-Prints a token for the service, which comes from `--service` or `.valar.yml`. In a GitHub Actions job with `permissions: id-token: write`, the command requests the identity token itself, for `--audience` (the endpoint's origin, such as `https://api.valar.dev`, by default); elsewhere it reads it from `--id-token-file`, `--id-token` or stdin. In GitHub Actions it masks the token in the log, and `--export` sets `VALAR_TOKEN` for the job's later steps instead of printing it:
+Prints a token for the service, which comes from `--service` or `.valar.yml`. In a GitHub Actions job with `permissions: id-token: write`, the command requests the identity token itself, for `--audience` (the endpoint's origin, such as `https://api.valar.dev`, by default); elsewhere it reads it from `--id-token-file` or stdin. In GitHub Actions it masks the token in the log, and `--export` sets `VALAR_TOKEN` for the job's later steps instead of printing it:
 
 ```bash
 VALAR_TOKEN=$(valar auth exchange --service web)
