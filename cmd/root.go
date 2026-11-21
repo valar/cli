@@ -3,8 +3,10 @@ package cmd
 import (
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/spf13/cobra"
+	"github.com/valar/cli/api"
 	"github.com/valar/cli/config"
 )
 
@@ -44,6 +46,7 @@ func init() {
 	config.Abort = func(msg string) {
 		exitWithError(newError(kindInvalid, "%s", msg), kindInvalid, false)
 	}
+	api.OnTokenExpiry = (&expiryNotice{w: os.Stderr, now: time.Now}).observe
 	// Configure projects.go
 	initProjectsCmd()
 	// Configure deployments.go

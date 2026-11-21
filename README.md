@@ -32,6 +32,8 @@ By default, Valar uses the default valarconfig file in `$HOME/.valar/config`. If
 VALAR_TOKEN=... valar build push --wait
 ```
 
+Tokens expire. Within 14 days of its token's expiry, a run prints one warning to stderr with the date and where to create a new token. A token that expired or was revoked fails with the server's reason.
+
 ### Machine-readable output
 
 With `--json`, or `VALAR_OUTPUT=json`, every command prints its result as one JSON document on stdout. Lists are arrays of objects whose fields match the API's JSON. Logs (`service logs`, `build logs`, `build watch`, `batch logs`) are printed as one JSON object per line, progress goes to stderr, and an error is printed on stderr as:

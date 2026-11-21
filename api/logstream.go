@@ -120,15 +120,13 @@ func (client *Client) streamOnce(path string, w io.Writer) error {
 		return fmt.Errorf("submitting request: %w", err)
 	}
 	defer resp.Body.Close()
+	client.noteTokenExpiry(resp.Header)
 	if resp.StatusCode != http.StatusOK {
 		body, err := io.ReadAll(resp.Body)
 		if err != nil {
 			return fmt.Errorf("fetching response: %w", err)
 		}
-		return Error{
-			StatusCode:  resp.StatusCode,
-			ServerError: parseErrorResponse(body),
-		}
+		return client.responseError(resp, body)
 	}
 	if contentType, _, err := mime.ParseMediaType(resp.Header.Get("Content-Type")); err == nil && contentType == logStreamContentType {
 		return decodeFramedStream(resp.Body, w)
