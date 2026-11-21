@@ -17,6 +17,8 @@ type JSONError struct {
 	Err string `json:"error"`
 	// Names lists the variables an environment error concerns.
 	Names []string `json:"names,omitempty"`
+	// Field names the setting a settings error concerns.
+	Field string `json:"field,omitempty"`
 }
 
 func (err JSONError) Error() string {
@@ -772,6 +774,8 @@ const (
 type RollbackRequest struct {
 	Version     int64  `json:"version"`
 	Environment string `json:"environment,omitempty"`
+	// Settings is pinned or current; empty leaves the choice to the server.
+	Settings string `json:"settings,omitempty"`
 }
 
 type RollbackResult struct {
@@ -907,6 +911,8 @@ type Deployment struct {
 	Build     string    `json:"build"`
 	// Failure is set on a failed deployment by servers that classify failures.
 	Failure *DeploymentFailure `json:"failure,omitempty"`
+	// Settings are the settings the deployment runs with, on servers that pin them.
+	Settings *ServiceSettings `json:"settings,omitempty"`
 }
 
 // DeploymentFailure says why a deployment failed. Kind is build, schedule,

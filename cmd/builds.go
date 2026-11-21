@@ -529,22 +529,8 @@ var buildPushCmd = &cobra.Command{
 				return err
 			}
 		}
-		hasEnvAPI, err := client.HasEnvAPI(serviceCfg.Project(), serviceCfg.Service())
-		if err != nil {
-			return err
-		}
-		if hasEnvAPI {
-			warnInlineEnvironment(serviceCfg.Unwrap())
-		}
-		artifact, err := client.SubmitArtifact(serviceCfg.Project(), serviceCfg.Service(), buildPushKind, targzFile)
-		if err != nil {
-			return err
-		}
-		// The kind is repeated here because the server reads an absent kind as
-		// "function" and rejects a mismatch with 409.
-		buildReq := newBuildRequest(serviceCfg, artifact.Artifact, buildPushKind, buildPushNoDeploy, !hasEnvAPI)
-		buildReq.Build.Constructor = constructor
-		build, err := client.SubmitBuild(serviceCfg.Project(), serviceCfg.Service(), buildReq)
+		deploy := !buildPushNoDeploy && !skipsDeploy(serviceCfg)
+		build, err := submitPush(client, serviceCfg, targzFile, buildPushKind, constructor, deploy)
 		if err != nil {
 			return err
 		}
@@ -557,8 +543,40 @@ var buildPushCmd = &cobra.Command{
 		if !buildPushWait {
 			return nil
 		}
-		return waitForPush(client, serviceCfg.Project(), serviceCfg.Service(), build.ID, !buildPushNoDeploy, buildPushTimeout, os.Stderr)
+		return waitForPush(client, serviceCfg.Project(), serviceCfg.Service(), build.ID, deploy, buildPushTimeout, os.Stderr)
 	}),
+}
+
+func skipsDeploy(cfg *config.ValidatedServiceConfig) bool {
+	d := cfg.Unwrap().Deployment
+	return d != nil && d.Skip
+}
+
+// submitPush uploads the archive and submits its build. A deploying push
+// first applies the settings .valar.yml declares, after the upload, which
+// creates a new service, and before the build, whose deployment pins them.
+func submitPush(client *api.Client, cfg *config.ValidatedServiceConfig, archive io.ReadCloser, kind, constructor string, deploy bool) (*api.Build, error) {
+	hasEnvAPI, err := client.HasEnvAPI(cfg.Project(), cfg.Service())
+	if err != nil {
+		return nil, err
+	}
+	if hasEnvAPI {
+		warnInlineEnvironment(cfg.Unwrap())
+	}
+	artifact, err := client.SubmitArtifact(cfg.Project(), cfg.Service(), kind, archive)
+	if err != nil {
+		return nil, err
+	}
+	if deploy {
+		if err := applyDeclaredSettings(client, cfg); err != nil {
+			return nil, err
+		}
+	}
+	// The kind is repeated here because the server reads an absent kind as
+	// "function" and rejects a mismatch with 409.
+	buildReq := newBuildRequest(cfg, artifact.Artifact, kind, !deploy, !hasEnvAPI)
+	buildReq.Build.Constructor = constructor
+	return client.SubmitBuild(cfg.Project(), cfg.Service(), buildReq)
 }
 
 func initBuildsCmd() {

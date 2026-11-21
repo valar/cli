@@ -219,6 +219,26 @@ valar service delete [--yes] [service]
 
 Deletes the service with its builds, deployments, batch executions, environment, secrets, schedules and permission rules. Its linked domains are unlinked; the project keeps their claims. The service defaults to the one in `.valar.yml`. The command asks you to type the service name to confirm; `--yes` skips that, and without a terminal it refuses unless `--yes` is given. If a deletion fails, the service stays disabled and running the command again finishes it.
 
+#### Show and change a service's settings
+
+```bash
+valar service settings [service]
+valar service settings set cpu=500 memory=2048 [--service service]
+valar service settings reset memory [--service service]
+```
+
+`cpu` is in millicores (100 to 2000, in steps of 100) and `memory` in MiB (128 to 4096). `settings` shows each value, whether it was set or is the platform's default, its bounds, and the project's budget; with `--json` it prints the API's response. `reset` returns a setting to its default. A change takes effect with the next deployment, which pins the settings it runs with. Raising `cpu`, `memory` or `minRunning` needs a token with full access (scope `all`), within the project's budget; otherwise the command exits with code 4. A value out of its bounds exits with code 2.
+
+A push applies the settings declared in `.valar.yml`, next to `skip`:
+
+```yaml
+deployment:
+  cpu: 500
+  memory: 512
+```
+
+Before a push that deploys, the declared keys are sent as one change, so the push's deployment runs with them; undeclared settings and settings removed from the file keep their value. With `--no-deploy` or `skip: true` nothing is sent. `http` and `minRunning` are accepted too, but the platform refuses values other than `true` and `0` for now.
+
 #### Listing all deployments of a service
 
 ```bash
@@ -238,10 +258,12 @@ Without a build ID, the build of the latest active deployment is redeployed with
 #### Reverse service to the previous deployment
 
 ```bash
-valar deployment rollback [--delta 1] [--env pinned|current]
+valar deployment rollback [--delta 1] [--env pinned|current] [--settings pinned|current]
 ```
 
-With `--env pinned` (the default) the new deployment gets the environment the earlier deployment ran with, and the command names the variables whose values differ from the current ones. With `--env current` it gets the current variables.
+The target is the newest deployment below the live one (the newest `done` deployment) that served: `done` or `expired`, without a failure. Failed deployments, and deployments above the live one, are skipped, and `--delta n` picks the n-th such deployment. Earlier versions of the CLI picked by version number alone, so they could roll back to a failed deployment.
+
+With `--env pinned` (the default) the new deployment gets the environment the earlier deployment ran with, and the command names the variables whose values differ from the current ones. With `--env current` it gets the current variables. `--settings` works the same way for the service's settings; without it, the platform pins them.
 
 ### Environment variables
 
@@ -331,7 +353,7 @@ valar domains delete [domain]
 valar builds push [--no-deploy] [--service service] [--wait [--timeout 30m]]
 ```
 
-`push` prints the build ID. With `--wait` it also streams the build log to stderr, waits for the build and its deployment, and exits non-zero if either fails. A failed deployment is reported with its kind (`build`, `schedule`, `capacity`, `start` or `health`), the reason, the version that keeps serving and the command that reads its log; on a terminal outside CI (`CI` unset), the last 20 lines of that log are printed too. `--service` pushes to another service than the one in `.valar.yml`, with the same build settings.
+`push` prints the build ID. Unless it skips the deployment, it first applies the settings declared in `.valar.yml` (see [the service's settings](#show-and-change-a-services-settings)). With `--wait` it also streams the build log to stderr, waits for the build and its deployment, and exits non-zero if either fails. A failed deployment is reported with its kind (`build`, `schedule`, `capacity`, `start` or `health`), the reason, the version that keeps serving and the command that reads its log; on a terminal outside CI (`CI` unset), the last 20 lines of that log are printed too. `--service` pushes to another service than the one in `.valar.yml`, with the same build settings.
 
 #### Listing all builds
 

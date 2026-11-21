@@ -55,7 +55,11 @@ Branch on the exit code, not on text:
 2. `valar build push --wait --json` uploads the folder (ignoring `.git`, `node_modules` and `.valar.yml`), builds it, deploys the build, and exits non-zero if either fails. The build log streams to stderr.
 3. `valar service url --json` gives the service's URLs.
 
-If the build fails, read its log with `valar build logs <build-id>`. If the deployment fails, the error names the failure kind (`health` and `start` mean the app did not come up; the previous version keeps serving) and the command that reads its log, `valar service logs --deployment <version>`. If the build passes but requests fail, read `valar service logs --json`. `valar deployment rollback` deploys the previous version again.
+If the build fails, read its log with `valar build logs <build-id>`. If the deployment fails, the error names the failure kind (`health` and `start` mean the app did not come up; the previous version keeps serving) and the command that reads its log, `valar service logs --deployment <version>`. If the build passes but requests fail, read `valar service logs --json`. `valar deployment rollback` deploys the newest earlier version that served, skipping failed ones.
+
+## Size
+
+`cpu` (millicores, 100 to 2000 in steps of 100, default 1000) and `memory` (MiB, 128 to 4096, default 1024) size each deployment. Declare them in `.valar.yml` under `deployment:`; a deploying push applies them before the build. `valar service settings --json` shows the current values, their bounds and the project's budget; `valar service settings set memory=2048` and `reset memory` change them for the next deployment. Raising a value needs a token with full access and room in the budget: exit code 4 means ask the user, not retry.
 
 ## The app's contract
 

@@ -24,6 +24,13 @@ type recordedRequest struct {
 // request except the client's version check.
 func newFakeAPI(t *testing.T, routes map[string]string) (*api.Client, *[]recordedRequest) {
 	t.Helper()
+	return newFakeAPIWithStatus(t, routes, nil)
+}
+
+// newFakeAPIWithStatus is newFakeAPI answering the routes in statuses with
+// that status code.
+func newFakeAPIWithStatus(t *testing.T, routes map[string]string, statuses map[string]int) (*api.Client, *[]recordedRequest) {
+	t.Helper()
 	var requests []recordedRequest
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/" {
@@ -36,6 +43,9 @@ func newFakeAPI(t *testing.T, routes map[string]string) (*api.Client, *[]recorde
 		if !ok {
 			http.NotFound(w, r)
 			return
+		}
+		if status, ok := statuses[r.Method+" "+r.URL.Path]; ok {
+			w.WriteHeader(status)
 		}
 		w.Write([]byte(resp))
 	}))

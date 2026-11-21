@@ -62,6 +62,13 @@
       "additionalProperties": false,
       "description": "How builds are deployed.",
       "properties": {
+        "cpu": {
+          "description": "Requested CPU in millicores, 100 to 2000 in steps of 100; the platform's default is 1000. Applied before each deploying push.",
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
         "environment": {
           "deprecated": true,
           "description": "Deprecated: runtime variables are stored by the platform, see 'valar env'. Move them with 'valar env import'.",
@@ -91,6 +98,27 @@
           },
           "type": [
             "array",
+            "null"
+          ]
+        },
+        "http": {
+          "description": "Whether the service serves HTTP; the platform's default is true. Applied before each deploying push.",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "memory": {
+          "description": "Requested memory in MiB, 128 to 4096; the platform's default is 1024. Applied before each deploying push.",
+          "type": [
+            "integer",
+            "null"
+          ]
+        },
+        "minRunning": {
+          "description": "Instances that are never paused; the platform's default is 0. Applied before each deploying push.",
+          "type": [
+            "integer",
             "null"
           ]
         },
