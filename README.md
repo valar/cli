@@ -68,6 +68,10 @@ valar service list --json | jq -r '.[].name'
 valar config init [--token token] [--project project] [--url url] [--name name] [--force]
 ```
 
+Before storing a token, `config init` and `config endpoint set` (when the endpoint has a URL) ask the platform about it with `/users/info`: they refuse agent tokens, which are for MCP clients, and warn when the token expires within 14 days.
+
+The CLI writes `~/.valar/config`, which holds tokens, readable only by you (mode 0600, in a 0700 directory). When it rewrites a configuration file that other users can read, it tightens the file to 0600 and says so on stderr.
+
 #### Dump the current configuration as YAML
 
 ```bash

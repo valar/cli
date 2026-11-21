@@ -1,6 +1,7 @@
 package config
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"os"
@@ -32,7 +33,7 @@ func NewCLIConfigFromEnvironment() (*CLIConfig, error) {
 		}
 		dirpath := filepath.Join(homedir, ".valar")
 		// Make sure dirpath exists
-		if err := os.MkdirAll(dirpath, 0755); err != nil {
+		if err := os.MkdirAll(dirpath, 0o700); err != nil {
 			return nil, fmt.Errorf("load config: %w", err)
 		}
 		// Make sure config exists
@@ -134,16 +135,34 @@ func (cfg *CLIConfig) APIClient() (*api.Client, error) {
 	return api.NewClient(cfg.Endpoint(), cfg.Token())
 }
 
+// Write saves the configuration, which holds tokens, readable only by its
+// owner. A file other users could read is tightened first, with a note on stderr.
 func (cfg *CLIConfig) Write() error {
-	f, err := os.Create(cfg.Path)
+	var buf bytes.Buffer
+	encoder := yaml.NewEncoder(&buf)
+	encoder.SetIndent(2)
+	if err := encoder.Encode(cfg); err != nil {
+		return fmt.Errorf("encode config: %w", err)
+	}
+	if err := encoder.Close(); err != nil {
+		return fmt.Errorf("encode config: %w", err)
+	}
+	info, statErr := os.Stat(cfg.Path)
+	f, err := os.OpenFile(cfg.Path, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
 	if err != nil {
 		return fmt.Errorf("create config: %w", err)
 	}
 	defer f.Close()
-	encoder := yaml.NewEncoder(f)
-	defer encoder.Close()
-	encoder.SetIndent(2)
-	return encoder.Encode(cfg)
+	if statErr == nil && info.Mode().Perm()&0o077 != 0 {
+		if err := f.Chmod(0o600); err != nil {
+			return fmt.Errorf("restrict config: %w", err)
+		}
+		fmt.Fprintf(os.Stderr, "Note: %s was open to other users; it is now readable only by you (mode 0600).\n", cfg.Path)
+	}
+	if _, err := f.Write(buf.Bytes()); err != nil {
+		return fmt.Errorf("save config: %w", err)
+	}
+	return f.Close()
 }
 
 type APIEndpoint struct {
