@@ -149,15 +149,14 @@ func lastDeployed(svc api.Service) string {
 }
 
 var (
-	serviceLogsFollow  bool
-	serviceLogsTail    bool
-	serviceLogsLines   int
-	serviceLogsService string
+	serviceLogsOptions    api.LogOptions
+	serviceLogsTimestamps bool
+	serviceLogsService    string
 )
 
 var serviceLogsCmd = &cobra.Command{
 	Use:   "logs [--service service]",
-	Short: "Show the logs of the latest deployment.",
+	Short: "Show the logs of the latest deployment, one deployment or all of them.",
 	Args:  cobra.NoArgs,
 	Run: runAndHandle(func(cmd *cobra.Command, args []string) error {
 		client, err := globalConfiguration.APIClient()
@@ -168,12 +167,36 @@ var serviceLogsCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		w, flush := logOutput()
-		if err := client.StreamServiceLogs(cfg.Project(), cfg.Service(), w, serviceLogsFollow, serviceLogsTail, serviceLogsLines); err != nil {
-			return err
-		}
-		return flush()
+		return showServiceLogs(client, cfg, serviceLogsOptions, serviceLogsTimestamps)
 	}),
+}
+
+// showServiceLogs prints a service log: as plain text by default, as records
+// with --json, or as lines prefixed with their time with timestamps.
+func showServiceLogs(client *api.Client, cfg *config.ValidatedServiceConfig, opts api.LogOptions, timestamps bool) error {
+	switch {
+	case opts.Deployment < 0:
+		return newError(kindInvalid, "--deployment must be a deployment version")
+	case opts.All && (opts.Deployment > 0 || opts.Tail || opts.Skip > 0):
+		return newError(kindInvalid, "--all cannot be combined with --deployment, --tail or --skip")
+	}
+	if !outputJSON && !timestamps {
+		return client.StreamServiceLogs(cfg.Project(), cfg.Service(), stdout, opts)
+	}
+	return client.StreamServiceLogRecords(cfg.Project(), cfg.Service(), opts, func(record api.LogRecord) error {
+		if outputJSON {
+			return writeLogRecord(stdout, record)
+		}
+		line := record.Line
+		if record.Stream == "platform" {
+			line = "[platform] " + line
+		}
+		if record.TS != "" {
+			line = record.TS + " " + line
+		}
+		_, err := fmt.Fprintln(stdout, line)
+		return err
+	})
 }
 
 var serviceDisableService string
@@ -355,9 +378,12 @@ func initServicesCmd() {
 	initPf.StringVarP(&initConstructor, "type", "t", "", "Build constructor type, detected from the project files when omitted")
 	initPf.StringVarP(&initProject, "project", "p", "", "Project to deploy service to, defaults to project set in global config")
 	initPf.BoolVarP(&initForce, "force", "f", false, "Allow configuration override")
-	serviceLogsCmd.Flags().BoolVarP(&serviceLogsFollow, "follow", "f", false, "Follow logs")
-	serviceLogsCmd.Flags().BoolVarP(&serviceLogsTail, "tail", "t", false, "Jump to end of logs")
-	serviceLogsCmd.Flags().IntVarP(&serviceLogsLines, "skip", "n", 0, "Lines to skip/rewind when reading logs")
+	serviceLogsCmd.Flags().BoolVarP(&serviceLogsOptions.Follow, "follow", "f", false, "Follow logs")
+	serviceLogsCmd.Flags().BoolVarP(&serviceLogsOptions.Tail, "tail", "t", false, "Jump to end of logs")
+	serviceLogsCmd.Flags().IntVarP(&serviceLogsOptions.Skip, "skip", "n", 0, "Lines to skip/rewind when reading logs")
+	serviceLogsCmd.Flags().BoolVar(&serviceLogsOptions.All, "all", false, "Show the logs of every deployment, oldest first")
+	serviceLogsCmd.Flags().IntVar(&serviceLogsOptions.Deployment, "deployment", 0, "Show the log of this deployment version")
+	serviceLogsCmd.Flags().BoolVar(&serviceLogsTimestamps, "timestamps", false, "Prefix each line with the time it was written")
 	serviceLogsCmd.Flags().StringVarP(&serviceLogsService, "service", "s", "", "The service to target")
 	serviceURLCmd.Flags().StringVarP(&serviceURLService, "service", "s", "", "The service to target")
 	serviceDisableCmd.Flags().StringVarP(&serviceDisableService, "service", "s", "", "The service to target")

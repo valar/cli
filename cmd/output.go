@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -204,38 +203,17 @@ func writeJSONLine(w io.Writer, v any) error {
 
 // logLine is a line of service or batch output in a JSON stream.
 type logLine struct {
-	Content string `json:"content"`
+	Line string `json:"line"`
 }
 
-// jsonLineWriter turns raw output into one {"content": ...} object per line.
-// Flush writes a final line that has no line break.
-type jsonLineWriter struct {
-	w   io.Writer
-	buf []byte
-}
-
-func (lw *jsonLineWriter) Write(b []byte) (int, error) {
-	lw.buf = append(lw.buf, b...)
-	for {
-		i := bytes.IndexByte(lw.buf, '\n')
-		if i < 0 {
-			return len(b), nil
-		}
-		line := bytes.TrimSuffix(lw.buf[:i], []byte("\r"))
-		if err := writeJSONLine(lw.w, logLine{Content: string(line)}); err != nil {
-			return 0, err
-		}
-		lw.buf = lw.buf[i+1:]
+// writeLogRecord writes a record as the server sent it, or a plain-text line
+// as {"line": ...}.
+func writeLogRecord(w io.Writer, record api.LogRecord) error {
+	if record.Raw == nil {
+		return writeJSONLine(w, logLine{Line: record.Line})
 	}
-}
-
-func (lw *jsonLineWriter) Flush() error {
-	if len(lw.buf) == 0 {
-		return nil
-	}
-	line := string(lw.buf)
-	lw.buf = nil
-	return writeJSONLine(lw.w, logLine{Content: line})
+	_, err := w.Write(append(record.Raw, '\n'))
+	return err
 }
 
 // logOutput returns where raw log output goes, and a flush to call once it
@@ -244,6 +222,6 @@ func logOutput() (io.Writer, func() error) {
 	if !outputJSON {
 		return stdout, func() error { return nil }
 	}
-	lw := &jsonLineWriter{w: stdout}
+	lw := &api.TextRecords{Emit: func(record api.LogRecord) error { return writeLogRecord(stdout, record) }}
 	return lw, lw.Flush
 }

@@ -117,40 +117,92 @@ func (client *Client) ListServices(project, service string) ([]Service, error) {
 	return services, nil
 }
 
-// StreamServiceLogs streams the logs of the latest service endpoint. A followed
-// stream reconnects and resumes if the connection is cut.
-func (client *Client) StreamServiceLogs(project, service string, w io.Writer, follow, tail bool, skip int) error {
-	base := fmt.Sprintf("/projects/%s/services/%s/logs", project, service)
-	logPath := func(params url.Values) string {
-		if follow {
-			params.Set("follow", "true")
-			params.Set("keepalive", keepaliveInterval.String())
-		}
-		return base + "?" + params.Encode()
+// LogOptions selects which service log to read and where to start.
+type LogOptions struct {
+	Follow bool
+	// Tail starts at the end of the log, Skip that many lines further on.
+	Tail bool
+	Skip int
+	// All reads every deployment's log in version order; Deployment reads one
+	// deployment's. Neither reads the latest deployment's.
+	All        bool
+	Deployment int
+}
+
+// logPath builds the request path for a service log with the given query.
+func (opts LogOptions) logPath(project, service string, params url.Values) string {
+	if opts.Deployment > 0 {
+		params.Set("deployment", strconv.Itoa(opts.Deployment))
+	}
+	if opts.Follow {
+		params.Set("follow", "true")
+		params.Set("keepalive", keepaliveInterval.String())
+	}
+	return fmt.Sprintf("/projects/%s/services/%s/logs?%s", project, service, params.Encode())
+}
+
+// start is the query of the first request. The server refuses all combined
+// with seek or skip.
+func (opts LogOptions) start() url.Values {
+	if opts.All {
+		return url.Values{"all": {"true"}}
 	}
 	seek := "start"
-	if tail {
+	if opts.Tail {
 		seek = "end"
 	}
-	start := url.Values{"seek": {seek}, "skip": {strconv.Itoa(skip)}}
-	if !follow {
-		return client.streamOnce(logPath(start), w)
+	return url.Values{"seek": {seek}, "skip": {strconv.Itoa(opts.Skip)}}
+}
+
+// StreamServiceLogs writes a service log as plain text. A followed stream
+// reconnects and resumes if the connection is cut.
+func (client *Client) StreamServiceLogs(project, service string, w io.Writer, opts LogOptions) error {
+	if !opts.Follow {
+		return client.streamOnce(opts.logPath(project, service, opts.start()), w)
 	}
-	// A stream that starts at the beginning of the log resumes at an exact byte
-	// offset. One anchored to the end of the log, or started at a line offset,
-	// has no absolute position to resume from, so it re-anchors to the current
-	// end and may miss lines written while reconnecting.
-	exact := !tail && skip == 0
+	// A stream that starts at the beginning of one deployment's log resumes at
+	// an exact byte offset. One anchored to the end of the log, started at a
+	// line offset or spanning all deployments has no absolute position to
+	// resume from, so it re-anchors to the current end and may miss lines
+	// written while reconnecting.
+	exact := !opts.Tail && opts.Skip == 0 && !opts.All
 	return client.follow(followOptions{path: func(resumeAfter int) string {
 		switch {
 		case resumeAfter == 0:
-			return logPath(start)
+			return opts.logPath(project, service, opts.start())
 		case exact:
-			return logPath(url.Values{"seek": {"start"}, "offset": {strconv.Itoa(resumeAfter)}})
+			return opts.logPath(project, service, url.Values{"seek": {"start"}, "offset": {strconv.Itoa(resumeAfter)}})
 		default:
-			return logPath(url.Values{"seek": {"end"}})
+			return opts.logPath(project, service, url.Values{"seek": {"end"}})
 		}
 	}}, w)
+}
+
+// StreamServiceLogRecords passes a service log to emit one record at a time.
+// Against a server that answers in plain text, each record holds only a line.
+func (client *Client) StreamServiceLogRecords(project, service string, opts LogOptions, emit func(LogRecord) error) error {
+	path := func(params url.Values) string {
+		params.Set("format", "json")
+		return opts.logPath(project, service, params)
+	}
+	if !opts.Follow {
+		return client.streamRecordsOnce(path(opts.start()), emit)
+	}
+	delivered := 0
+	count := func(record LogRecord) error {
+		delivered++
+		return emit(record)
+	}
+	started := false
+	return client.reconnect(func() error {
+		params := opts.start()
+		if started {
+			// Records have no resume cursor yet, so a reconnect re-anchors to the end.
+			params = url.Values{"seek": {"end"}}
+		}
+		started = true
+		return client.streamRecordsOnce(path(params), count)
+	}, func() int { return delivered }, false)
 }
 
 // SubmitArtifact submits a new build input artifact to the server.
