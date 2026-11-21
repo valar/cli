@@ -69,16 +69,9 @@ func envPath(project, service string) string {
 	return fmt.Sprintf("/projects/%s/services/%s/env", project, service)
 }
 
-// envError maps a route the server does not know to ErrNoEnvAPI. The router
-// answers those in plain text, while API errors are JSON.
+// envError maps a route the server does not know to ErrNoEnvAPI.
 func envError(err error) error {
-	var apiErr Error
-	if !errors.As(err, &apiErr) {
-		return err
-	}
-	var jsonErr JSONError
-	missing := apiErr.StatusCode == http.StatusNotFound || apiErr.StatusCode == http.StatusMethodNotAllowed
-	if missing && !errors.As(apiErr.ServerError, &jsonErr) {
+	if unknownRoute(err) {
 		return ErrNoEnvAPI
 	}
 	return err

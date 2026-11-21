@@ -71,13 +71,7 @@ func settingsPath(project, service string) string {
 
 // settingsError maps a route the server does not know to ErrNoSettingsAPI.
 func settingsError(err error) error {
-	var apiErr Error
-	if !errors.As(err, &apiErr) {
-		return err
-	}
-	var jsonErr JSONError
-	missing := apiErr.StatusCode == http.StatusNotFound || apiErr.StatusCode == http.StatusMethodNotAllowed
-	if missing && !errors.As(apiErr.ServerError, &jsonErr) {
+	if unknownRoute(err) {
 		return ErrNoSettingsAPI
 	}
 	return err

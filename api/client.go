@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -70,6 +71,18 @@ func (err Error) Error() string {
 
 func (err Error) Unwrap() error {
 	return err.ServerError
+}
+
+// unknownRoute reports whether err is the router's answer to a route the
+// server does not serve: a 404 or 405 in plain text, while API errors are JSON.
+func unknownRoute(err error) bool {
+	var apiErr Error
+	if !errors.As(err, &apiErr) {
+		return false
+	}
+	var jsonErr JSONError
+	missing := apiErr.StatusCode == http.StatusNotFound || apiErr.StatusCode == http.StatusMethodNotAllowed
+	return missing && !errors.As(apiErr.ServerError, &jsonErr)
 }
 
 func parseErrorResponse(body []byte) error {
@@ -238,9 +251,7 @@ func (client *Client) SubmitBuild(project, service string, buildRequest *BuildRe
 
 // AbortBuild aborts a scheduled or running build.
 func (client *Client) AbortBuild(project, service, id string) error {
-	var (
-		path = fmt.Sprintf("/projects/%s/services/%s/builds/%s/abort", project, service, id)
-	)
+	path := fmt.Sprintf("/projects/%s/services/%s/builds/%s/abort", project, service, id)
 	var resp struct{}
 	if err := client.request("POST", path, &resp, nil); err != nil {
 		return err
@@ -256,9 +267,7 @@ func (client *Client) DeleteService(project, service string) error {
 
 // Sets a service' status. A disabled service cannot receive any requests.
 func (client *Client) ChangeServiceStatus(project, service string, disabled bool) error {
-	var (
-		path = fmt.Sprintf("/projects/%s/services/%s/status?disabled=%v", project, service, disabled)
-	)
+	path := fmt.Sprintf("/projects/%s/services/%s/status?disabled=%v", project, service, disabled)
 	if err := client.request("POST", path, nil, nil); err != nil {
 		return err
 	}
@@ -336,9 +345,7 @@ func (decoder *logEntryDecoder) finish(streamErr error) error {
 
 // ShowBuildLogs retrieves a specific build task logs.
 func (client *Client) ShowBuildLogs(project, service, id string, consumer func(LogEntry)) error {
-	var (
-		path = fmt.Sprintf("/projects/%s/services/%s/builds/%s/logs", project, service, id)
-	)
+	path := fmt.Sprintf("/projects/%s/services/%s/builds/%s/logs", project, service, id)
 	decoder := newLogEntryDecoder(consumer)
 	err := client.streamOnce(path, decoder)
 	return decoder.finish(err)
@@ -497,9 +504,7 @@ func (client *Client) AddDomain(project, domain string) (map[string]string, erro
 }
 
 func (client *Client) DeleteDomain(project, domain string) error {
-	var (
-		path = fmt.Sprintf("/projects/%s/domains/%s", project, domain)
-	)
+	path := fmt.Sprintf("/projects/%s/domains/%s", project, domain)
 	if err := client.request(http.MethodDelete, path, nil, nil); err != nil {
 		return err
 	}
@@ -710,16 +715,12 @@ func (client *Client) SetSchedule(project, service string, sched Schedule) error
 }
 
 func (client *Client) DeleteSchedule(project, service, schedule string) error {
-	var (
-		path = fmt.Sprintf("/projects/%s/services/%s/schedules/%s", project, service, schedule)
-	)
+	path := fmt.Sprintf("/projects/%s/services/%s/schedules/%s", project, service, schedule)
 	return client.request(http.MethodDelete, path, nil, nil)
 }
 
 func (client *Client) TriggerSchedule(project, service, schedule string) error {
-	var (
-		path = fmt.Sprintf("/projects/%s/services/%s/schedules/%s/trigger", project, service, schedule)
-	)
+	path := fmt.Sprintf("/projects/%s/services/%s/schedules/%s/trigger", project, service, schedule)
 	return client.request(http.MethodPost, path, nil, nil)
 }
 
@@ -868,9 +869,13 @@ type Permission struct {
 	State  string         `json:"state"`
 }
 
+// UserInfo is the calling principal. Token is nil on servers that predate
+// tokens with grants.
 type UserInfo struct {
-	Name     string   `json:"name"`
-	Projects []string `json:"projects"`
+	Name      string   `json:"name"`
+	Projects  []string `json:"projects"`
+	Principal string   `json:"principal,omitempty"`
+	Token     *Token   `json:"token,omitempty"`
 }
 
 type Service struct {

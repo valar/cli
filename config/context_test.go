@@ -4,6 +4,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/valar/cli/config"
@@ -149,4 +150,80 @@ func captureStderr(t *testing.T, f func()) string {
 	w.Close()
 	out, _ := io.ReadAll(r)
 	return string(out)
+}
+
+func perm(t *testing.T, path string) os.FileMode {
+	t.Helper()
+	info, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return info.Mode().Perm()
+}
+
+func TestCLIConfig_WriteKeepsTokensPrivate(t *testing.T) {
+	for _, tc := range []struct {
+		Name     string
+		Explicit bool
+		Existing os.FileMode // 0 for no file
+		WantNote bool
+	}{
+		{"NewDefault", false, 0, false},
+		{"PrivateDefault", false, 0o600, false},
+		{"WorldReadableDefault", false, 0o644, true},
+		{"GroupReadableExplicit", true, 0o640, true},
+	} {
+		t.Run(tc.Name, func(t *testing.T) {
+			clearEnv(t)
+			home := t.TempDir()
+			t.Setenv("HOME", home)
+			path := filepath.Join(home, ".valar", "config")
+			if tc.Explicit {
+				path = filepath.Join(t.TempDir(), "valarconfig")
+				t.Setenv("VALARCONFIG", path)
+			}
+			if tc.Existing != 0 {
+				if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+					t.Fatal(err)
+				}
+				writeFile(t, filepath.Dir(path), filepath.Base(path), fileConfig)
+				if err := os.Chmod(path, tc.Existing); err != nil {
+					t.Fatal(err)
+				}
+			}
+
+			var cfg *config.CLIConfig
+			note := captureStderr(t, func() {
+				var err error
+				if cfg, err = config.NewCLIConfigFromEnvironment(); err != nil {
+					t.Fatal(err)
+				}
+				cfg.ActiveContext = "default"
+				if err := cfg.Write(); err != nil {
+					t.Fatalf("Write: %v", err)
+				}
+			})
+
+			if got := perm(t, path); got != 0o600 {
+				t.Errorf("config mode %o, want 600", got)
+			}
+			if !tc.Explicit && tc.Existing == 0 {
+				if got := perm(t, filepath.Join(home, ".valar")); got != 0o700 {
+					t.Errorf("directory mode %o, want 700", got)
+				}
+			}
+			if tc.WantNote != (note != "") {
+				t.Errorf("stderr %q, want a note: %v", note, tc.WantNote)
+			}
+			if tc.WantNote && (strings.Count(note, "\n") != 1 || !strings.Contains(note, path) || !strings.Contains(note, "0600")) {
+				t.Errorf("note %q is not one line naming %s and its new mode", note, path)
+			}
+			if tc.Existing != 0 {
+				data, err := os.ReadFile(path)
+				if err != nil || !strings.Contains(string(data), "file-token") {
+					t.Errorf("rewritten config lost its contents: %q, %v", data, err)
+				}
+			}
+		})
+	}
 }

@@ -8,6 +8,7 @@ import (
 	"os"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/juju/ansiterm"
 	"github.com/spf13/cobra"
@@ -107,6 +108,11 @@ var configEndpointSetCmd = &cobra.Command{
 		}
 		if configEndpointSetUrl != "" {
 			ep.URL = configEndpointSetUrl
+		}
+		if configEndpointSetToken != "" && ep.URL != "" {
+			if err := verifyToken(ep.URL, ep.Token, api.OnTokenExpiry); err != nil {
+				return fmt.Errorf("verify token: %w", err)
+			}
 		}
 		if globalConfiguration.Endpoints == nil {
 			globalConfiguration.Endpoints = map[string]config.APIEndpoint{}
@@ -223,14 +229,38 @@ type removed struct {
 	Removed bool   `json:"removed"`
 }
 
+// verifyToken asks endpoint what token grants before the CLI stores it. It
+// refuses agent tokens and passes the expiry to notice, which warns when it is
+// near. A platform that reports no grant only shows that the token is accepted.
+func verifyToken(endpoint, token string, notice func(endpoint string, expires time.Time)) error {
+	client, err := api.NewClient(endpoint, token)
+	if err != nil {
+		return err
+	}
+	info, err := client.UserInfo()
+	if err != nil {
+		return err
+	}
+	switch {
+	case info.Token == nil:
+	case info.Token.Kind == "agent":
+		return newError(kindNotAllowed, "this is an agent token, which is for MCP clients, not the CLI; create a user token in the console or with 'valar token create'")
+	case !info.Token.ExpiresAt.IsZero() && notice != nil:
+		notice(endpoint, info.Token.ExpiresAt)
+	}
+	return nil
+}
+
 // writeConfigError is a failure, unlike the other errors of the RunE config
 // commands, which reject their input.
 func writeConfigError(err error) error {
 	return withKind(kindFailed, fmt.Errorf("write config: %w", err))
 }
 
-var configInitUrl, configInitToken, configInitProject, configInitName string
-var configInitForce bool
+var (
+	configInitUrl, configInitToken, configInitProject, configInitName string
+	configInitForce                                                   bool
+)
 
 var configInitCmd = &cobra.Command{
 	Use:   "init",
@@ -254,13 +284,11 @@ var configInitCmd = &cobra.Command{
 			return fmt.Errorf("token is required")
 		}
 
-		// Validate credentials.
-		fmt.Fprint(os.Stderr, "Verifying credentials... ")
-		if _, err := api.NewClient(urlValue, tokenValue); err != nil {
-			fmt.Fprintln(os.Stderr, "failed.")
+		// A warning about the token's expiry may follow, so this is a line of its own.
+		fmt.Fprintln(os.Stderr, "Verifying credentials...")
+		if err := verifyToken(urlValue, tokenValue, api.OnTokenExpiry); err != nil {
 			return fmt.Errorf("verify credentials: %w", err)
 		}
-		fmt.Fprintln(os.Stderr, "done.")
 
 		if !cmd.Flags().Changed("project") {
 			projectValue = prompt("Project", "")
