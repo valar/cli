@@ -27,7 +27,7 @@ Set the credentials in the environment rather than running the interactive `vala
 
 These take precedence over `~/.valar/config` and `.valar.yml`. Check them with `valar whoami --json`, which also shows the token's binding, scopes and expiry. A token with only `read` and `deploy` builds and deploys but cannot change variables, domains or permissions.
 
-For CI, the user creates a token bound to the project with `valar token create ci --project <project> --scopes read,deploy` and stores it as the CI secret `VALAR_TOKEN`. The value is shown once. Leave creating and revoking tokens to the user.
+For CI, the user creates a token bound to the project with `valar token create ci --project <project> --scopes read,deploy` and stores it as the CI secret `VALAR_TOKEN`. The value is shown once. Where the installation trusts GitHub's identity tokens, a trust policy (`valar trust add`) lets a workflow with `permissions: id-token: write` deploy without a stored token. Leave creating and revoking tokens and trust policies to the user.
 
 ## Always use `--json`
 

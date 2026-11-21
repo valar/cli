@@ -120,6 +120,18 @@ func (cfg *CLIConfig) Endpoint() string {
 	return url
 }
 
+// EndpointOrDefault is the endpoint for requests that need no token:
+// VALAR_ENDPOINT, the active context's, or DefaultEndpoint.
+func (cfg *CLIConfig) EndpointOrDefault() string {
+	if cfg.env.Endpoint != "" {
+		return cfg.env.Endpoint
+	}
+	if url := cfg.Endpoints[cfg.Contexts[cfg.ActiveContext].Endpoint].URL; url != "" {
+		return url
+	}
+	return DefaultEndpoint
+}
+
 func (cfg *CLIConfig) Project() string {
 	if cfg.env.Project != "" {
 		return cfg.env.Project

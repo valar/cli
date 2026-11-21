@@ -195,7 +195,7 @@ valar service logs [--follow] [--tail] [--skip n] [--all | --deployment n] [--ti
 
 #### Print a service's URLs
 
-Linked custom domains come first, then the service's own `<project>-<service>` domains.
+Linked custom domains come first, then the service's own `<project>-<service>` domains. The command reads the service's inspect route, so a token bound to the service works; against an older platform it reads the project's service listing instead.
 
 ```bash
 valar service url [--service service]
@@ -422,7 +422,7 @@ A token created with `valar token create` acts as you. It is a child of the toke
 #### Create a token
 
 ```bash
-valar token create [--project project] [--service service] [--scopes read,deploy] [--ttl 90d] name
+valar token create [--project project] [--service service] [--scopes read,deploy] [--ttl 90d] [--agent] name
 ```
 
 `--project` binds the token to one project and `--service` to one service of it. `--scopes` limits it to some of `read`, `deploy`, `invoke`, `kv` and `all` (the default). `--ttl` takes days (`30d`) or a duration (`12h`); the default is 90 days and the maximum 365. A token for CI that pushes and deploys one project:
@@ -432,6 +432,37 @@ valar token create ci --project acme --scopes read,deploy
 ```
 
 The token goes to stdout and the rest to stderr, so `TOKEN=$(valar token create ci)` captures only the token; with `--json` it is the `value` field. Valar shows it once.
+
+#### Create a token for an AI agent
+
+```bash
+valar token create claude --agent --project acme [--service web] [--ttl 30d]
+```
+
+An agent token works only at the platform's MCP endpoint (`https://api.valar.dev/mcp`, or the API's origin followed by `/mcp` on another installation), not with this CLI or the API. It is bound to one project, can only read, and lasts 7 days by default and at most 30. The platform refuses it until the installation turns on its MCP endpoint. After creating it, the command prints how to configure MCP clients; with `--json`, `mcpUrl` holds the endpoint.
+
+Keep the token in a password manager or the client's secret store and give it to the client as an environment variable, here `VALAR_AGENT_TOKEN`, rather than writing it into a configuration file. For Claude Code:
+
+```bash
+claude mcp add --transport http valar https://api.valar.dev/mcp \
+  --header 'Authorization: Bearer ${VALAR_AGENT_TOKEN}'
+```
+
+Other MCP clients that speak Streamable HTTP and send a static header take the same URL and header, as in an `mcpServers` entry:
+
+```json
+{
+  "mcpServers": {
+    "valar": {
+      "type": "http",
+      "url": "https://api.valar.dev/mcp",
+      "headers": { "Authorization": "Bearer ${VALAR_AGENT_TOKEN}" }
+    }
+  }
+}
+```
+
+Do not run the agent where it can read `~/.valar`, which holds your own token.
 
 #### List tokens
 
@@ -448,6 +479,50 @@ valar token revoke [--project project] id
 ```
 
 Revokes the token with the ID that `valar token list` shows, and the tokens it created. With `--project`, it revokes a token from the project's list.
+
+### Deploys from CI
+
+Where the installation trusts a CI provider's identity tokens, a CI job can deploy without a stored token. A trust policy lets the job exchange its identity token for a token that acts as the policy's creator, bound to one service with `read` and `deploy`, for an hour. These commands need permission to manage the project, a token created in the console or with authctl, and a newer Valar platform.
+
+#### Add a trust policy
+
+```bash
+valar trust add [--project project] --service web --github-repo acme/web --branch main --workflow deploy.yml [--event push]
+valar trust add [--project project] --service web --github-repo acme/web --environment production --workflow deploy.yml
+valar trust add [--project project] --service 'webpr*' --github-repo acme/web --pull-requests
+valar trust add [--project project] --service web --subject sub [--claim name=value]... [--issuer url]
+```
+
+`--github-repo` builds the policy for GitHub Actions. It reads the repository's ID, its owner's ID and its OIDC subject format from GitHub, writes the subject as GitHub will issue it (with immutable IDs where the repository uses them), and pins `repository_id` and `repository_owner_id`. A branch or environment policy also pins `event_name` (`--event`, `push` by default) and `workflow_ref` (`--workflow`), so other workflows and triggers do not match. `--workflow deploy.yml@refs/heads/release` names the ref an environment's workflow runs from; it is the default branch otherwise. Protect an environment that a policy names with deployment branch rules, because GitHub issues its subject to every job that names it.
+
+A `--pull-requests` policy names a preview prefix followed by `*`: pull request 42 may deploy only `webpr42`. GitHub issues no identity tokens to pull requests from forks.
+
+For a private repository, set `GH_TOKEN` to a GitHub token that can read it, such as `GH_TOKEN=$(gh auth token)`. `--subject` and `--claim` set the policy by hand, for other CI providers or subject formats `--github-repo` does not know. `--issuer` defaults to `https://token.actions.githubusercontent.com`. `create` is an alias of `add`.
+
+#### List and remove trust policies
+
+```bash
+valar trust list [--project project]
+valar trust remove [--project project] id
+```
+
+Removing a policy revokes the tokens it issued. `delete` is an alias of `remove`.
+
+#### Exchange an identity token
+
+```bash
+valar auth exchange [--service service] [--project project] [--id-token-file path | --id-token jwt] [--audience audience] [--export]
+```
+
+Prints a token for the service, which comes from `--service` or `.valar.yml`. In a GitHub Actions job with `permissions: id-token: write`, the command requests the identity token itself, for `--audience` (the endpoint's origin, such as `https://api.valar.dev`, by default); elsewhere it reads it from `--id-token-file`, `--id-token` or stdin. In GitHub Actions it masks the token in the log, and `--export` sets `VALAR_TOKEN` for the job's later steps instead of printing it:
+
+```bash
+VALAR_TOKEN=$(valar auth exchange --service web)
+export VALAR_TOKEN
+valar build push --wait
+```
+
+When no policy admits the identity token, the error shows the claims a policy matches, such as `sub` and `workflow_ref`, to compare with `valar trust list`. The [Valar GitHub Action](https://github.com/valar/action) does all of this when it gets no `token` input.
 
 ### Audit log
 

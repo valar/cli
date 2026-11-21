@@ -122,7 +122,7 @@ func (client *Client) openStream(path string) (io.ReadCloser, bool, error) {
 	if err != nil {
 		return nil, false, fmt.Errorf("client request: %w", err)
 	}
-	req.Header.Add("Authorization", "Bearer "+client.Token)
+	client.authorize(req)
 
 	resp, err := client.stream.Do(req)
 	if err != nil {

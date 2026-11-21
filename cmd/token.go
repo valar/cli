@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"os"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -78,9 +79,14 @@ var (
 	tokenService string
 	tokenScopes  []string
 	tokenTTL     string
+	tokenAgent   bool
 )
 
-var tokenIDPattern = regexp.MustCompile(`^[0-9a-f]{32}$`)
+// maxAgentTTL is the platform's limit for agent tokens (RFC-0011).
+const maxAgentTTL = 30 * 24 * time.Hour
+
+// idPattern matches the IDs of tokens and trust policies.
+var idPattern = regexp.MustCompile(`^[0-9a-f]{32}$`)
 
 var (
 	tokenCmd = &cobra.Command{
@@ -96,7 +102,7 @@ binding, can create tokens. These commands need a newer Valar platform.`,
 	}
 
 	tokenCreateCmd = &cobra.Command{
-		Use:   "create [--project p] [--service s] [--scopes read,deploy] [--ttl 90d] name",
+		Use:   "create [--project p] [--service s] [--scopes read,deploy] [--ttl 90d] [--agent] name",
 		Short: "Create a token and print it once.",
 		Long: `Create a token that acts as you, and print it once.
 
@@ -110,12 +116,20 @@ A token for CI that pushes and deploys one project needs only read and deploy:
 12h. It defaults to 90 days and is at most 365 days, and the token expires no
 later than the token that creates it.
 
+--agent creates a token for an AI agent's MCP client. It works only at the
+platform's MCP endpoint, not with this CLI or the API, needs --project, can
+only read, and lasts 7 days by default and at most 30:
+
+  valar token create claude --agent --project acme --ttl 30d
+
+` + agentClientHelp(mcpURL(config.DefaultEndpoint)) + `
+
 The token goes to stdout and everything else to stderr, so
 TOKEN=$(valar token create ci) captures only the token. Valar shows it this
 once: store it right away.`,
 		Args: cobra.ExactArgs(1),
 		Run: runAndHandle(func(cmd *cobra.Command, args []string) error {
-			req, ttl, err := newTokenRequest(args[0], tokenProject, tokenService, tokenScopes, tokenTTL)
+			req, ttl, err := newTokenRequest(args[0], tokenProject, tokenService, tokenScopes, tokenTTL, tokenAgent)
 			if err != nil {
 				return err
 			}
@@ -190,10 +204,19 @@ func ttlString(d time.Duration) string {
 
 // newTokenRequest checks the flags of token create and returns the request
 // and the lifetime it asks for, zero for the server's default.
-func newTokenRequest(name, project, service string, scopes []string, ttl string) (api.TokenRequest, time.Duration, error) {
+func newTokenRequest(name, project, service string, scopes []string, ttl string, agent bool) (api.TokenRequest, time.Duration, error) {
 	req := api.TokenRequest{Name: name, Project: project, Service: service, Scopes: scopes}
 	if service != "" && project == "" {
 		return req, 0, newError(kindInvalid, "--service needs --project")
+	}
+	if agent {
+		if project == "" {
+			return req, 0, newError(kindInvalid, "--agent needs --project: an agent token acts on one project")
+		}
+		if len(scopes) > 0 && !slices.Equal(scopes, []string{"read"}) {
+			return req, 0, newError(kindInvalid, "agent tokens can only read; leave out --scopes")
+		}
+		req.Kind, req.Scopes = "agent", []string{"read"}
 	}
 	if ttl == "" {
 		return req, 0, nil
@@ -202,8 +225,36 @@ func newTokenRequest(name, project, service string, scopes []string, ttl string)
 	if err != nil {
 		return req, 0, withKind(kindInvalid, err)
 	}
+	if agent && d > maxAgentTTL {
+		return req, 0, newError(kindInvalid, "agent tokens last at most 30 days; --ttl %s is longer", ttl)
+	}
 	req.TTL = ttlString(d)
 	return req, d, nil
+}
+
+// mcpURL is the MCP endpoint next to the API's /v2 endpoint.
+func mcpURL(endpoint string) string {
+	return strings.TrimSuffix(strings.TrimSuffix(endpoint, "/"), "/v2") + "/mcp"
+}
+
+// agentClientHelp says how to give MCP clients an agent token without
+// writing it into their configuration (RFC-0011).
+func agentClientHelp(mcp string) string {
+	return `An MCP client reaches ` + mcp + ` with the header
+"Authorization: Bearer <token>". Keep the token in a password manager or the
+client's secret store and give it to the client as VALAR_AGENT_TOKEN, which
+Claude Code expands in its configuration:
+
+  claude mcp add --transport http valar ` + mcp + ` \
+    --header 'Authorization: Bearer ${VALAR_AGENT_TOKEN}'
+
+Other clients that speak Streamable HTTP take the same URL and header, such
+as in an mcpServers entry:
+
+  {"mcpServers": {"valar": {"type": "http", "url": "` + mcp + `",
+    "headers": {"Authorization": "Bearer ${VALAR_AGENT_TOKEN}"}}}}
+
+Do not run the agent where it can read ~/.valar, which holds your own token.`
 }
 
 // createToken mints a token and writes its value alone to w, and what it
@@ -213,7 +264,15 @@ func createToken(client *api.Client, req api.TokenRequest, ttl time.Duration, w,
 	if err != nil {
 		return err
 	}
-	return emit(w, token, func(w io.Writer) error {
+	agent := req.Kind == "agent"
+	var doc any = token
+	if agent {
+		doc = struct {
+			*api.MintedToken
+			MCPURL string `json:"mcpUrl"`
+		}{token, mcpURL(client.Endpoint)}
+	}
+	return emit(w, doc, func(w io.Writer) error {
 		fmt.Fprintf(progress, "Created token %s.\n", token.Name)
 		tw := ansiterm.NewTabWriter(progress, 6, 0, 1, ' ', 0)
 		writeRows(tw, tokenRows(token.Token, now))
@@ -224,8 +283,13 @@ func createToken(client *api.Client, req api.TokenRequest, ttl time.Duration, w,
 			fmt.Fprintln(progress, "It expires with the token that created it, before the --ttl asked for.")
 		}
 		fmt.Fprintln(progress, "Store the token now; Valar shows it only once:")
-		_, err := fmt.Fprintln(w, token.Value)
-		return err
+		if _, err := fmt.Fprintln(w, token.Value); err != nil {
+			return err
+		}
+		if agent {
+			fmt.Fprintln(progress, "\n"+agentClientHelp(mcpURL(client.Endpoint)))
+		}
+		return nil
 	})
 }
 
@@ -273,7 +337,7 @@ func printTokens(w io.Writer, tokens []api.Token, withOwner bool, now time.Time)
 }
 
 func revokeToken(client *api.Client, project, id string, w io.Writer) error {
-	if !tokenIDPattern.MatchString(id) {
+	if !idPattern.MatchString(id) {
 		return newError(kindInvalid, "%q is not a token ID; 'valar token list' shows them", id)
 	}
 	if project != "" {
@@ -381,7 +445,8 @@ func initTokenCmd() {
 	tokenCreateCmd.Flags().StringVar(&tokenProject, "project", "", "Bind the token to this project")
 	tokenCreateCmd.Flags().StringVar(&tokenService, "service", "", "Bind the token to this service of the project")
 	tokenCreateCmd.Flags().StringSliceVar(&tokenScopes, "scopes", nil, "What the token may do: read, deploy, invoke, kv or all (default all)")
-	tokenCreateCmd.Flags().StringVar(&tokenTTL, "ttl", "", "Lifetime, such as 30d or 12h (default 90d)")
+	tokenCreateCmd.Flags().StringVar(&tokenTTL, "ttl", "", "Lifetime, such as 30d or 12h (default 90d, 7d for --agent)")
+	tokenCreateCmd.Flags().BoolVar(&tokenAgent, "agent", false, "Create a read-only token for an MCP client, bound to --project")
 	tokenListCmd.Flags().StringVar(&tokenProject, "project", "", "List the tokens bound to this project instead of yours")
 	tokenRevokeCmd.Flags().StringVar(&tokenProject, "project", "", "Revoke a token from this project's list")
 	tokenCmd.AddCommand(tokenCreateCmd, tokenListCmd, tokenRevokeCmd)

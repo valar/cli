@@ -95,7 +95,7 @@ func printAudit(w io.Writer, events []api.AuditEvent) error {
 			kind = fmt.Sprintf("count (%d)", e.Count)
 		}
 		token := e.TokenID
-		if tokenIDPattern.MatchString(token) {
+		if idPattern.MatchString(token) {
 			token = token[:8]
 		}
 		status := "-"

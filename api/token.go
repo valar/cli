@@ -91,7 +91,9 @@ type MintedToken struct {
 
 // TokenRequest mints a token. TTL is a Go duration; empty means the server's default.
 type TokenRequest struct {
-	Name    string   `json:"name"`
+	Name string `json:"name"`
+	// Kind is user, the server's default when empty, or agent.
+	Kind    string   `json:"kind,omitempty"`
 	Project string   `json:"project,omitempty"`
 	Service string   `json:"service,omitempty"`
 	Scopes  []string `json:"scopes,omitempty"`
