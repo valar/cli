@@ -323,27 +323,46 @@ var serviceURLCmd = &cobra.Command{
 			return err
 		}
 		project, service := cfg.Project(), cfg.Service()
-		services, err := client.ListServices(project, service)
+		urls, err := lookupServiceURLs(client, project, service)
 		if err != nil {
-			return fmt.Errorf("listing services: %w", err)
+			return err
 		}
-		for _, svc := range services {
-			if svc.Name != service {
-				continue
-			}
-			urls := serviceURLs(project, svc)
-			if len(urls) == 0 {
-				return newError(kindNotFound, "service %s has no domains yet; it gets them with its first deployment", service)
-			}
-			return result(struct {
-				URLs []string `json:"urls"`
-			}{urls}, func(w io.Writer) error {
-				_, err := fmt.Fprintln(w, strings.Join(urls, "\n"))
-				return err
-			})
-		}
-		return newError(kindNotFound, "service %s not found", service)
+		return result(struct {
+			URLs []string `json:"urls"`
+		}{urls}, func(w io.Writer) error {
+			_, err := fmt.Fprintln(w, strings.Join(urls, "\n"))
+			return err
+		})
 	}),
+}
+
+// lookupServiceURLs asks the inspect route, which a token bound to the
+// service may read, and falls back to the listing on servers without it.
+func lookupServiceURLs(client *api.Client, project, service string) ([]string, error) {
+	noDomains := newError(kindNotFound, "service %s has no domains yet; it gets them with its first deployment", service)
+	svc, err := client.InspectService(project, service)
+	switch {
+	case err == nil && len(svc.URLs) == 0:
+		return nil, noDomains
+	case err == nil:
+		return svc.URLs, nil
+	case !errors.Is(err, api.ErrNoInspectAPI):
+		return nil, fmt.Errorf("inspecting service: %w", err)
+	}
+	services, err := client.ListServices(project, service)
+	if err != nil {
+		return nil, fmt.Errorf("listing services: %w", err)
+	}
+	for _, svc := range services {
+		if svc.Name != service {
+			continue
+		}
+		if urls := serviceURLs(project, svc); len(urls) > 0 {
+			return urls, nil
+		}
+		return nil, noDomains
+	}
+	return nil, newError(kindNotFound, "service %s not found", service)
 }
 
 // serviceURLs orders a service's domains as URLs: linked custom domains first,

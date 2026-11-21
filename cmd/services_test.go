@@ -197,3 +197,60 @@ func TestShowServiceLogs(t *testing.T) {
 		})
 	}
 }
+
+func TestLookupServiceURLs(t *testing.T) {
+	const (
+		inspect = "GET /projects/p/services/web/inspect"
+		list    = "GET /projects/p/services/web"
+	)
+	for _, tc := range []struct {
+		Name      string
+		Routes    map[string]string
+		Statuses  map[string]int
+		Want      []string
+		WantKind  errorKind
+		WantCalls []string
+	}{
+		{
+			Name:   "Inspect",
+			Routes: map[string]string{inspect: `{"name":"web","domains":["p-web.valar.app","web.example.com"],"urls":["https://web.example.com","https://p-web.valar.app"]}`},
+			Want:   []string{"https://web.example.com", "https://p-web.valar.app"}, WantCalls: []string{inspect},
+		},
+		{
+			Name: "InspectWithoutDomains", Routes: map[string]string{inspect: `{"name":"web","urls":[]}`},
+			WantKind: kindNotFound, WantCalls: []string{inspect},
+		},
+		{
+			Name: "InspectNotFound", Routes: map[string]string{inspect: `{"error":"service not found"}`}, Statuses: map[string]int{inspect: http.StatusNotFound},
+			WantKind: kindNotFound, WantCalls: []string{inspect},
+		},
+		{
+			Name: "InspectRefused", Routes: map[string]string{inspect: `{"error":"token is bound to service api"}`}, Statuses: map[string]int{inspect: http.StatusForbidden},
+			WantKind: kindNotAllowed, WantCalls: []string{inspect},
+		},
+		{
+			Name:   "OlderServer",
+			Routes: map[string]string{list: `[{"name":"webapp","domains":["p-webapp.valar.app"]},{"name":"web","domains":["p-web.valar.app","web.example.com"]}]`},
+			Want:   []string{"https://web.example.com", "https://p-web.valar.app"}, WantCalls: []string{inspect, list},
+		},
+		{
+			Name: "OlderServerUnknownService", Routes: map[string]string{list: `[{"name":"webapp"}]`},
+			WantKind: kindNotFound, WantCalls: []string{inspect, list},
+		},
+	} {
+		t.Run(tc.Name, func(t *testing.T) {
+			client, requests := newFakeAPIWithStatus(t, tc.Routes, tc.Statuses)
+			got, err := lookupServiceURLs(client, "p", "web")
+			if tc.WantKind != 0 {
+				if err == nil || classify(err, kindFailed) != tc.WantKind {
+					t.Errorf("error %v of kind %v, want kind %v", err, classify(err, kindFailed), tc.WantKind)
+				}
+			} else if err != nil || !reflect.DeepEqual(got, tc.Want) {
+				t.Errorf("lookupServiceURLs = %v, %v; want %v", got, err, tc.Want)
+			}
+			if calls := routeOrder(*requests); !reflect.DeepEqual(calls, tc.WantCalls) {
+				t.Errorf("requests %v, want %v", calls, tc.WantCalls)
+			}
+		})
+	}
+}

@@ -15,6 +15,11 @@ func VerifyNames(project, service string) error {
 	if err := VerifyProjectName(project); err != nil {
 		return err
 	}
+	return VerifyServiceName(service)
+}
+
+// VerifyServiceName checks that service is a valid service name.
+func VerifyServiceName(service string) error {
 	if !serviceExp.Match([]byte(service)) {
 		return fmt.Errorf("invalid service name: may only contain alphanumerics")
 	}

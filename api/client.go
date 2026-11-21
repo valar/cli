@@ -93,12 +93,20 @@ func parseErrorResponse(body []byte) error {
 	return serverErr
 }
 
+// authorize adds the bearer token; a client without one sends no header, as
+// the token exchange requires.
+func (client *Client) authorize(req *http.Request) {
+	if client.Token != "" {
+		req.Header.Add("Authorization", "Bearer "+client.Token)
+	}
+}
+
 func (client *Client) request(method, path string, obj interface{}, post io.Reader) error {
 	req, err := http.NewRequest(method, client.Endpoint+path, post)
 	if err != nil {
 		return fmt.Errorf("client request: %w", err)
 	}
-	req.Header.Add("Authorization", "Bearer "+client.Token)
+	client.authorize(req)
 	resp, err := client.http.Do(req)
 	if err != nil {
 		return fmt.Errorf("submitting request: %w", err)

@@ -198,6 +198,7 @@ func TestNewTokenRequest(t *testing.T) {
 		Project, Service string
 		Scopes           []string
 		TTL              string
+		Agent            bool
 		Want             api.TokenRequest
 		WantKind         errorKind
 	}{
@@ -210,9 +211,17 @@ func TestNewTokenRequest(t *testing.T) {
 		{Name: "Service", Project: "acme", Service: "web", Want: api.TokenRequest{Name: "ci", Project: "acme", Service: "web"}},
 		{Name: "ServiceWithoutProject", Service: "web", WantKind: kindInvalid},
 		{Name: "BadTTL", TTL: "soon", WantKind: kindInvalid},
+		{Name: "Agent", Project: "acme", Agent: true, Want: api.TokenRequest{Name: "ci", Kind: "agent", Project: "acme", Scopes: []string{"read"}}},
+		{
+			Name: "AgentForServiceAtMost", Project: "acme", Service: "web", Scopes: []string{"read"}, TTL: "30d", Agent: true,
+			Want: api.TokenRequest{Name: "ci", Kind: "agent", Project: "acme", Service: "web", Scopes: []string{"read"}, TTL: "720h"},
+		},
+		{Name: "AgentWithoutProject", Agent: true, WantKind: kindInvalid},
+		{Name: "AgentThatDeploys", Project: "acme", Scopes: []string{"read", "deploy"}, Agent: true, WantKind: kindInvalid},
+		{Name: "AgentBeyond30Days", Project: "acme", TTL: "31d", Agent: true, WantKind: kindInvalid},
 	} {
 		t.Run(tc.Name, func(t *testing.T) {
-			req, _, err := newTokenRequest("ci", tc.Project, tc.Service, tc.Scopes, tc.TTL)
+			req, _, err := newTokenRequest("ci", tc.Project, tc.Service, tc.Scopes, tc.TTL, tc.Agent)
 			if tc.WantKind != 0 {
 				if got := classify(err, kindFailed); err == nil || got != tc.WantKind {
 					t.Errorf("error %v of kind %v, want kind %v", err, got, tc.WantKind)
@@ -286,6 +295,65 @@ func TestCreateToken(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestCreateToken_Agent(t *testing.T) {
+	const minted = `{"id":"` + ciTokenID + `","kind":"agent","name":"claude","project":"acme","scopes":["read"],"parent":"` + rootTokenID +
+		`","createdAt":"2026-11-21T12:00:00Z","expiresAt":"2026-11-28T12:00:00Z","value":"valar_at_secret"}`
+	req := api.TokenRequest{Name: "claude", Kind: "agent", Project: "acme", Scopes: []string{"read"}}
+	t.Run("Human", func(t *testing.T) {
+		setJSON(t, false)
+		client, requests := newFakeAPI(t, map[string]string{"POST /tokens": minted})
+		var out, progress bytes.Buffer
+		if err := createToken(client, req, 0, &out, &progress, tokenNow); err != nil {
+			t.Fatalf("createToken: %v", err)
+		}
+		if got, want := (*requests)[0].Body, `{"name":"claude","kind":"agent","project":"acme","scopes":["read"]}`; got != want {
+			t.Errorf("body = %s, want %s", got, want)
+		}
+		if out.String() != "valar_at_secret\n" {
+			t.Errorf("stdout %q, want only the token", out.String())
+		}
+		mcp := client.Endpoint + "/mcp"
+		containsAll(t, "progress", progress.String(),
+			"Kind:", "agent", "Binding:", "project acme",
+			"claude mcp add --transport http valar "+mcp,
+			"--header 'Authorization: Bearer ${VALAR_AGENT_TOKEN}'",
+			`"url": "`+mcp+`"`,
+			"~/.valar",
+		)
+		if strings.Contains(progress.String(), "valar_at_secret") {
+			t.Errorf("progress %q shows the token", progress.String())
+		}
+	})
+	t.Run("JSON", func(t *testing.T) {
+		setJSON(t, true)
+		client, _ := newFakeAPI(t, map[string]string{"POST /tokens": minted})
+		var out, progress bytes.Buffer
+		if err := createToken(client, req, 0, &out, &progress, tokenNow); err != nil {
+			t.Fatalf("createToken: %v", err)
+		}
+		var doc struct {
+			api.MintedToken
+			MCPURL string `json:"mcpUrl"`
+		}
+		if err := json.Unmarshal(out.Bytes(), &doc); err != nil || doc.Value != "valar_at_secret" || doc.Kind != "agent" || doc.MCPURL != client.Endpoint+"/mcp" {
+			t.Errorf("stdout %s decodes to %+v, %v", out.String(), doc, err)
+		}
+	})
+}
+
+func TestMCPURL(t *testing.T) {
+	for in, want := range map[string]string{
+		"https://api.valar.dev/v2":         "https://api.valar.dev/mcp",
+		"https://api.valar.dev/v2/":        "https://api.valar.dev/mcp",
+		"https://valar.example.com/api/v2": "https://valar.example.com/api/mcp",
+		"http://localhost:8080":            "http://localhost:8080/mcp",
+	} {
+		if got := mcpURL(in); got != want {
+			t.Errorf("mcpURL(%q) = %q, want %q", in, got, want)
+		}
 	}
 }
 
@@ -526,7 +594,7 @@ func TestPrintUserInfo(t *testing.T) {
 func runTokenCLI(t *testing.T, endpoint string, args ...string) string {
 	t.Helper()
 	t.Cleanup(func() {
-		tokenProject, tokenService, tokenScopes, tokenTTL = "", "", nil, ""
+		tokenProject, tokenService, tokenScopes, tokenTTL, tokenAgent = "", "", nil, "", false
 		auditProject, auditLimit, auditBefore = "", defaultAuditLimit, 0
 	})
 	return runCLI(t, endpoint, args...)
@@ -544,6 +612,11 @@ func TestTokenCommands_Flags(t *testing.T) {
 			"Create",
 			[]string{"token", "create", "ci", "--project", "acme", "--scopes", "read,deploy", "--ttl", "30d"},
 			"POST /tokens", ciMinted, `{"name":"ci","project":"acme","scopes":["read","deploy"],"ttl":"720h"}`,
+		},
+		{
+			"CreateAgent",
+			[]string{"token", "create", "claude", "--agent", "--project", "acme", "--ttl", "30d"},
+			"POST /tokens", ciMinted, `{"name":"claude","kind":"agent","project":"acme","scopes":["read"],"ttl":"720h"}`,
 		},
 		{"ListProject", []string{"token", "list", "--project", "acme"}, "GET /projects/acme/tokens", `[]`, ""},
 		{"RevokeProject", []string{"token", "revoke", ciTokenID, "--project", "acme"}, "DELETE /projects/acme/tokens/" + ciTokenID, `{"revoked":1}`, ""},

@@ -49,7 +49,9 @@ func init() {
 	api.OnTokenExpiry = (&expiryNotice{w: os.Stderr, now: time.Now}).observe
 	// Configure projects.go
 	initProjectsCmd()
+	initExchangeCmd()
 	initTokenCmd()
+	initTrustCmd()
 	initAuditCmd()
 	// Configure deployments.go
 	initDeploymentsCmd()

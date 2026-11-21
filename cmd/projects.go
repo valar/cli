@@ -227,7 +227,7 @@ var (
 
 	authCmd = &cobra.Command{
 		Use:   "auth",
-		Short: "Manage user and service permissions.",
+		Short: "Manage permissions, and exchange CI identity tokens for tokens.",
 	}
 
 	whoamiCmd = &cobra.Command{
