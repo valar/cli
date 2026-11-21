@@ -905,6 +905,15 @@ type Deployment struct {
 	Error     string    `json:"error"`
 	Status    string    `json:"status"`
 	Build     string    `json:"build"`
+	// Failure is set on a failed deployment by servers that classify failures.
+	Failure *DeploymentFailure `json:"failure,omitempty"`
+}
+
+// DeploymentFailure says why a deployment failed. Kind is build, schedule,
+// capacity, start or health.
+type DeploymentFailure struct {
+	Kind    string `json:"kind"`
+	Message string `json:"message"`
 }
 
 // NewClient creates a new client instance.
