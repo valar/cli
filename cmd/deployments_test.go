@@ -158,3 +158,57 @@ func TestRollback(t *testing.T) {
 		})
 	}
 }
+
+func TestListDeployments_Failure(t *testing.T) {
+	const deploys = `[
+		{"version":5,"status":"failed","error":"crashed on start","build":"b5","createdAt":"2026-11-20T10:00:00Z"},
+		{"version":6,"status":"done","error":"","build":"b6","createdAt":"2026-11-20T11:00:00Z"},
+		{"version":7,"status":"failed","error":"not ready within 300s","build":"b7","createdAt":"2026-11-20T12:00:00Z",
+		 "failure":{"kind":"health","message":"not ready within 300s"}}
+	]`
+	for _, tc := range []struct {
+		Name string
+		JSON bool
+	}{
+		{"Human", false},
+		{"JSON", true},
+	} {
+		t.Run(tc.Name, func(t *testing.T) {
+			cfg, _ := writeServiceConfig(t, deployConfig)
+			client, _ := newFakeAPI(t, map[string]string{listRoute: deploys})
+			out := setJSON(t, tc.JSON)
+			if err := listDeployments(client, cfg); err != nil {
+				t.Fatalf("listDeployments: %v", err)
+			}
+			if !tc.JSON {
+				lines := strings.Split(out.String(), "\n")
+				for i, want := range map[int][]string{
+					1: {"5", "failed ", "crashed on start"},
+					3: {"7", "failed (health)", "not ready within 300s"},
+				} {
+					for _, field := range want {
+						if !strings.Contains(lines[i], field) {
+							t.Errorf("line %q lacks %q", lines[i], field)
+						}
+					}
+				}
+				if strings.Contains(lines[1], "(") {
+					t.Errorf("a deployment without failure shows a kind: %q", lines[1])
+				}
+				return
+			}
+			var got []map[string]json.RawMessage
+			if err := json.Unmarshal(out.Bytes(), &got); err != nil {
+				t.Fatalf("decode %q: %v", out.String(), err)
+			}
+			if _, ok := got[0]["failure"]; ok {
+				t.Errorf("a deployment without failure has one: %s", got[0]["failure"])
+			}
+			var failure bytes.Buffer
+			json.Compact(&failure, got[2]["failure"])
+			if want := `{"kind":"health","message":"not ready within 300s"}`; failure.String() != want {
+				t.Errorf("failure = %s, want %s", failure.String(), want)
+			}
+		})
+	}
+}

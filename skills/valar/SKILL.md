@@ -55,7 +55,7 @@ Branch on the exit code, not on text:
 2. `valar build push --wait --json` uploads the folder (ignoring `.git`, `node_modules` and `.valar.yml`), builds it, deploys the build, and exits non-zero if either fails. The build log streams to stderr.
 3. `valar service url --json` gives the service's URLs.
 
-If the build fails, read its log with `valar build logs <build-id>`. If the build passes but requests fail, read `valar service logs --json`. `valar deployment rollback` deploys the previous version again.
+If the build fails, read its log with `valar build logs <build-id>`. If the deployment fails, the error names the failure kind (`health` and `start` mean the app did not come up; the previous version keeps serving) and the command that reads its log, `valar service logs --deployment <version>`. If the build passes but requests fail, read `valar service logs --json`. `valar deployment rollback` deploys the previous version again.
 
 ## The app's contract
 

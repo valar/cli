@@ -3,9 +3,14 @@ package cmd
 import (
 	"fmt"
 	"io"
+	"os"
+	"strconv"
+	"strings"
 	"time"
+	"unicode"
 
 	"github.com/valar/cli/api"
+	"golang.org/x/term"
 )
 
 // pollInterval is how often waitForPush asks for build and deployment status.
@@ -89,7 +94,7 @@ func waitForDeployment(client *api.Client, project, service, buildID string, dea
 			fmt.Fprintf(w, "Version %d was replaced by a newer deployment.\n", deployment.Version)
 			return nil
 		case "failed":
-			return fmt.Errorf("deployment of version %d failed%s", deployment.Version, detail(deployment.Error))
+			return deploymentFailed(client, project, service, deployment, deployments, w)
 		}
 		if time.Now().After(deadline) {
 			return fmt.Errorf("timed out waiting for version %d, which is %s", deployment.Version, deployment.Status)
@@ -117,3 +122,78 @@ func detail(msg string) string {
 	}
 	return ": " + msg
 }
+
+// failureLogLines is how many lines of a failed deployment's log a terminal
+// shows.
+const failureLogLines = 20
+
+// stderrIsTerminal reports whether stderr is a terminal; tests replace it.
+var stderrIsTerminal = func() bool { return term.IsTerminal(int(os.Stderr.Fd())) }
+
+// deploymentFailed prints the end of a failed deployment's log on an
+// interactive terminal and returns why it failed with a hint to its log.
+func deploymentFailed(client *api.Client, project, service string, failed *api.Deployment, deployments []api.Deployment, w io.Writer) error {
+	ci := os.Getenv("CI")
+	if !outputJSON && (ci == "" || ci == "false") && stderrIsTerminal() {
+		printLogTail(client, project, service, failed.Version, w)
+	}
+	return newError(kindFailed, "%s\nRead its log with: valar service logs --deployment %d", failureMessage(failed, deployments), failed.Version)
+}
+
+// failureMessage describes a failed deployment, with its failure kind and the
+// version still serving when the server classifies failures.
+func failureMessage(failed *api.Deployment, deployments []api.Deployment) string {
+	msg := fmt.Sprintf("deployment of version %d failed", failed.Version)
+	if failed.Failure == nil {
+		return msg + detail(escapeControl(failed.Error))
+	}
+	msg += fmt.Sprintf(" (%s)%s", escapeControl(failed.Failure.Kind), detail(escapeControl(failed.Failure.Message)))
+	var serving int64
+	for _, d := range deployments {
+		if d.Status == "done" && d.Version > serving {
+			serving = d.Version
+		}
+	}
+	if serving > 0 {
+		msg += fmt.Sprintf("; version %d keeps serving", serving)
+	}
+	return msg
+}
+
+// printLogTail prints the last lines of a deployment's log. It is best
+// effort: the log may be missing or unreadable.
+func printLogTail(client *api.Client, project, service string, version int64, w io.Writer) {
+	var lines []string
+	opts := api.LogOptions{Deployment: int(version), Tail: true, Skip: failureLogLines}
+	err := client.StreamServiceLogRecords(project, service, opts, func(record api.LogRecord) error {
+		lines = append(lines, escapeControl(record.Line))
+		return nil
+	})
+	if err != nil || len(lines) == 0 {
+		return
+	}
+	fmt.Fprintf(w, "Last lines of version %d:\n", version)
+	for _, line := range lines[max(0, len(lines)-failureLogLines):] {
+		fmt.Fprintln(w, "  "+line)
+	}
+}
+
+// escapeControl escapes control characters other than tabs, such as terminal
+// escape sequences, so that server text cannot drive the terminal.
+func escapeControl(s string) string {
+	if strings.IndexFunc(s, isEscaped) < 0 {
+		return s
+	}
+	var b strings.Builder
+	for _, r := range s {
+		if isEscaped(r) {
+			q := strconv.QuoteRune(r)
+			b.WriteString(q[1 : len(q)-1])
+		} else {
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
+}
+
+func isEscaped(r rune) bool { return r != '\t' && unicode.IsControl(r) }

@@ -154,12 +154,17 @@ func listDeployments(client *api.Client, cfg config.ServiceConfig) error {
 		tw := ansiterm.NewTabWriter(w, 6, 0, 1, ' ', 0)
 		fmt.Fprintln(tw, "VERSION\tSTATUS\tCREATED\tBUILD\tERROR")
 		for _, d := range deployments {
+			status, msg := colorize(d.Status), d.Error
+			if d.Failure != nil {
+				status += " (" + escapeControl(d.Failure.Kind) + ")"
+				msg = d.Failure.Message
+			}
 			fmt.Fprintln(tw, strings.Join([]string{
 				strconv.FormatInt(d.Version, 10),
-				colorize(d.Status),
+				status,
 				humanize.Time(d.CreatedAt),
 				d.Build,
-				d.Error,
+				escapeControl(msg),
 			}, "\t"))
 		}
 		tw.Flush()

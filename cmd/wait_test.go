@@ -21,6 +21,10 @@ type fakeRollout struct {
 	deployLists [][]api.Deployment
 	services    []api.Service
 	deployCalls int
+	// serviceLog is the NDJSON body of the service log; logQuery records the
+	// query it was read with.
+	serviceLog string
+	logQuery   string
 }
 
 func next[T any](items *[]T) T {
@@ -40,6 +44,10 @@ func (f *fakeRollout) client(t *testing.T) *api.Client {
 		switch path := r.URL.Path; {
 		case path == "/":
 			body = map[string]string{"version": "v2"}
+		case path == "/projects/p/services/s/logs":
+			f.logQuery = r.URL.RawQuery
+			w.Write([]byte(f.serviceLog))
+			return
 		case strings.HasSuffix(path, "/logs"):
 			return
 		case strings.HasSuffix(path, "/inspect"):
@@ -99,7 +107,7 @@ func TestWaitForPush(t *testing.T) {
 			Name:   "deployment fails",
 			Fake:   &fakeRollout{buildStates: []api.Build{done}, deployLists: [][]api.Deployment{deploy("failed", "crashed on start")}},
 			Deploy: true,
-			Error:  "deployment of version 3 failed: crashed on start",
+			Error:  "deployment of version 3 failed: crashed on start\nRead its log with: valar service logs --deployment 3",
 		},
 		{
 			Name:   "deployment replaced by a newer one",
@@ -213,5 +221,90 @@ func TestEnableService_RetriesWhileStopping(t *testing.T) {
 	conflicts = 1
 	if err := enableService(client, "p", "s", &out); err == nil {
 		t.Error("a conflict past the retry window was not reported")
+	}
+}
+
+func TestWaitForPush_DeploymentFailure(t *testing.T) {
+	defer func(d time.Duration) { pollInterval = d }(pollInterval)
+	pollInterval = time.Millisecond
+	defer func(f func() bool) { stderrIsTerminal = f }(stderrIsTerminal)
+
+	const hint = "\nRead its log with: valar service logs --deployment 3"
+	health := &api.DeploymentFailure{Kind: "health", Message: "not ready within 300s"}
+	deploys := func(failure *api.DeploymentFailure) []api.Deployment {
+		return []api.Deployment{
+			{Version: 1, Build: "b0", Status: "expired"},
+			{Version: 2, Build: "b0", Status: "done"},
+			{Version: 3, Build: "b1", Status: "failed", Error: "not ready within 300s", Failure: failure},
+		}
+	}
+	log := `{"stream":"stdout","line":"listening on :8080"}` + "\n" + `{"stream":"stderr","line":"\u001b[31mpanic: no database\u001b[0m"}` + "\n"
+	for _, tc := range []struct {
+		Name     string
+		Failure  *api.DeploymentFailure
+		CI       string
+		Terminal bool
+		Error    string
+		LogShown bool
+	}{
+		{
+			Name:    "failure kind and serving version",
+			Failure: health,
+			Error:   "deployment of version 3 failed (health): not ready within 300s; version 2 keeps serving" + hint,
+		},
+		{
+			Name:  "server without failure kinds",
+			Error: "deployment of version 3 failed: not ready within 300s" + hint,
+		},
+		{
+			Name:     "terminal shows the end of the log",
+			Failure:  health,
+			Terminal: true,
+			Error:    "deployment of version 3 failed (health): not ready within 300s; version 2 keeps serving" + hint,
+			LogShown: true,
+		},
+		{
+			Name:     "CI prints no log lines",
+			Failure:  health,
+			CI:       "true",
+			Terminal: true,
+			Error:    "deployment of version 3 failed (health): not ready within 300s; version 2 keeps serving" + hint,
+		},
+	} {
+		t.Run(tc.Name, func(t *testing.T) {
+			t.Setenv("CI", tc.CI)
+			stderrIsTerminal = func() bool { return tc.Terminal }
+			fake := &fakeRollout{
+				buildStates: []api.Build{{ID: "b1", Status: "done"}},
+				deployLists: [][]api.Deployment{deploys(tc.Failure)},
+				serviceLog:  log,
+			}
+			var out strings.Builder
+			err := waitForPush(fake.client(t), "p", "s", "b1", true, time.Minute, &out)
+			if err == nil || err.Error() != tc.Error {
+				t.Fatalf("error = %v, want %q", err, tc.Error)
+			}
+			if kind := classify(err, kindUnavailable); kind != kindFailed {
+				t.Errorf("kind = %v, want failed", kind)
+			}
+			shown := strings.Contains(out.String(), "Last lines of version 3:")
+			if shown != tc.LogShown {
+				t.Fatalf("log shown = %v, want %v; output %q", shown, tc.LogShown, out.String())
+			}
+			if !tc.LogShown {
+				if fake.logQuery != "" {
+					t.Errorf("read the service log with %q", fake.logQuery)
+				}
+				return
+			}
+			if want := "  \\x1b[31mpanic: no database\\x1b[0m\n"; !strings.HasSuffix(out.String(), want) {
+				t.Errorf("output %q does not end with the escaped line %q", out.String(), want)
+			}
+			for _, param := range []string{"deployment=3", "seek=end", "skip=20"} {
+				if !strings.Contains(fake.logQuery, param) {
+					t.Errorf("log query %q lacks %s", fake.logQuery, param)
+				}
+			}
+		})
 	}
 }

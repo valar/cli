@@ -225,6 +225,8 @@ Deletes the service with its builds, deployments, batch executions, environment,
 valar deployment list
 ```
 
+A failed deployment's status names the kind of failure, such as `failed (health)`, on platforms that report it. With `--json`, the API's `failure` object is passed through.
+
 #### Roll out a specific build
 
 ```bash
@@ -329,7 +331,7 @@ valar domains delete [domain]
 valar builds push [--no-deploy] [--service service] [--wait [--timeout 30m]]
 ```
 
-`push` prints the build ID. With `--wait` it also streams the build log to stderr, waits for the build and its deployment, and exits non-zero if either fails. `--service` pushes to another service than the one in `.valar.yml`, with the same build settings.
+`push` prints the build ID. With `--wait` it also streams the build log to stderr, waits for the build and its deployment, and exits non-zero if either fails. A failed deployment is reported with its kind (`build`, `schedule`, `capacity`, `start` or `health`), the reason, the version that keeps serving and the command that reads its log; on a terminal outside CI (`CI` unset), the last 20 lines of that log are printed too. `--service` pushes to another service than the one in `.valar.yml`, with the same build settings.
 
 #### Listing all builds
 
