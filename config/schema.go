@@ -64,6 +64,8 @@ func schemaOf(t reflect.Type) map[string]any {
 		return map[string]any{"type": "string"}
 	case reflect.Bool:
 		return map[string]any{"type": "boolean"}
+	case reflect.Int:
+		return map[string]any{"type": "integer"}
 	case reflect.Struct:
 		props := map[string]any{}
 		for i := 0; i < t.NumField(); i++ {

@@ -67,6 +67,34 @@ type BuildConfig struct {
 type DeploymentConfig struct {
 	Skip        bool                `yaml:"skip" json:"skip" doc:"Build without deploying."`
 	Environment []EnvironmentConfig `yaml:"environment" json:"environment" doc:"Deprecated: runtime variables are stored by the platform, see 'valar env'. Move them with 'valar env import'."`
+	CPU         *int                `yaml:"cpu,omitempty" json:"cpu,omitempty" doc:"Requested CPU in millicores, 100 to 2000 in steps of 100; the platform's default is 1000. Applied before each deploying push."`
+	Memory      *int                `yaml:"memory,omitempty" json:"memory,omitempty" doc:"Requested memory in MiB, 128 to 4096; the platform's default is 1024. Applied before each deploying push."`
+	HTTP        *bool               `yaml:"http,omitempty" json:"http,omitempty" doc:"Whether the service serves HTTP; the platform's default is true. Applied before each deploying push."`
+	MinRunning  *int                `yaml:"minRunning,omitempty" json:"minRunning,omitempty" doc:"Instances that are never paused; the platform's default is 0. Applied before each deploying push."`
+}
+
+// Settings returns the service settings the file declares, or nil.
+func (d *DeploymentConfig) Settings() map[string]any {
+	if d == nil {
+		return nil
+	}
+	settings := map[string]any{}
+	if d.CPU != nil {
+		settings["cpu"] = *d.CPU
+	}
+	if d.Memory != nil {
+		settings["memory"] = *d.Memory
+	}
+	if d.HTTP != nil {
+		settings["http"] = *d.HTTP
+	}
+	if d.MinRunning != nil {
+		settings["minRunning"] = *d.MinRunning
+	}
+	if len(settings) == 0 {
+		return nil
+	}
+	return settings
 }
 
 // Abort reports a missing setting and ends the process. The CLI replaces it to
@@ -179,7 +207,7 @@ func (config *ServiceConfigYAML) ReadFromFile(name string) error {
 			return &Error{Path: path, Err: fmt.Errorf("%s: %w", path, err)}
 		}
 		if err := doc.Decode(config); err != nil {
-			return &Error{Path: path, Err: fmt.Errorf("config read: %w", err)}
+			return &Error{Path: path, Err: fmt.Errorf("%s: %w", path, err)}
 		}
 		config.filePath = path
 		return nil

@@ -65,6 +65,9 @@ deployment:
 		{"NullSections", "project: p\nservice: s\nbuild:\ndeployment:\n", ""},
 		{"UnknownTopLevel", "project: p\nservice: s\nregion: eu\n", `line 3: unknown key "region" at the top level`},
 		{"UnknownInBuild", "project: p\nbuild:\n  constructr: go\n", `line 3: unknown key "constructr" in build`},
+		{"Settings", "project: p\nservice: s\ndeployment:\n  cpu: 500\n  memory: 512\n  http: true\n  minRunning: 0\n", ""},
+		{"SettingNotInteger", "project: p\ndeployment:\n  cpu: 500m\n", "cannot unmarshal"},
+		{"UnknownSetting", "project: p\ndeployment:\n  disk: 10\n", `line 3: unknown key "disk" in deployment`},
 		{"UnknownInEnvEntry", "build:\n  environment:\n    - key: A\n      val: x\n", `line 4: unknown key "val" in build.environment[0]`},
 	} {
 		t.Run(tc.Name, func(t *testing.T) {
@@ -90,6 +93,39 @@ deployment:
 				if !strings.Contains(err.Error(), want) {
 					t.Errorf("error %q lacks %q", err, want)
 				}
+			}
+		})
+	}
+}
+
+func TestDeploymentConfig_Settings(t *testing.T) {
+	for _, tc := range []struct {
+		Name   string
+		Config string
+		Want   string
+	}{
+		{"None", "project: p\ndeployment:\n  skip: false\n", "null"},
+		{"NoSection", "project: p\n", "null"},
+		{"NullKey", "project: p\ndeployment:\n  cpu:\n", "null"},
+		{"Some", "project: p\ndeployment:\n  memory: 2048\n", `{"memory":2048}`},
+		{"All", "project: p\ndeployment:\n  cpu: 500\n  memory: 512\n  http: true\n  minRunning: 0\n", `{"cpu":500,"http":true,"memory":512,"minRunning":0}`},
+	} {
+		t.Run(tc.Name, func(t *testing.T) {
+			dir := t.TempDir()
+			if err := os.WriteFile(filepath.Join(dir, ".valar.yml"), []byte(tc.Config), 0o644); err != nil {
+				t.Fatal(err)
+			}
+			t.Chdir(dir)
+			var cfg ServiceConfigYAML
+			if err := cfg.ReadFromFile(".valar.yml"); err != nil {
+				t.Fatal(err)
+			}
+			got, err := json.Marshal(cfg.Deployment.Settings())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if string(got) != tc.Want {
+				t.Errorf("Settings() = %s, want %s", got, tc.Want)
 			}
 		})
 	}

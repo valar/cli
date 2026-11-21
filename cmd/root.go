@@ -55,6 +55,7 @@ func init() {
 	initBuildsCmd()
 	// Configure services.go
 	initServicesCmd()
+	initSettingsCmd()
 	// Configure env.go
 	initEnvCmd()
 	// Configure domains.go

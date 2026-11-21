@@ -111,20 +111,24 @@ func TestRollback(t *testing.T) {
 		Name     string
 		EnvAPI   bool
 		Env      string
+		Settings string
 		WantBody string
 		WantErr  string
 	}{
-		{"Pinned", true, "pinned", `{"version":2,"environment":"pinned"}`, ""},
-		{"Current", true, "current", `{"version":2,"environment":"current"}`, ""},
+		{"Pinned", true, "pinned", "", `{"version":2,"environment":"pinned"}`, ""},
+		{"Current", true, "current", "", `{"version":2,"environment":"current"}`, ""},
 		// An old server ignores the field and rolls back pinned, as it always has.
-		{"PinnedOldServer", false, "pinned", `{"version":2,"environment":"pinned"}`, ""},
-		{"CurrentOldServer", false, "current", "", api.EnvMinPlatform},
-		{"Unknown", true, "latest", "", "unknown --env"},
+		{"PinnedOldServer", false, "pinned", "", `{"version":2,"environment":"pinned"}`, ""},
+		{"CurrentOldServer", false, "current", "", "", api.EnvMinPlatform},
+		{"Unknown", true, "latest", "", "", "unknown --env"},
+		{"SettingsPinned", true, "pinned", "pinned", `{"version":2,"environment":"pinned","settings":"pinned"}`, ""},
+		{"SettingsCurrent", true, "pinned", "current", `{"version":2,"environment":"pinned","settings":"current"}`, ""},
+		{"SettingsUnknown", true, "pinned", "latest", "", "unknown --settings"},
 	} {
 		t.Run(tc.Name, func(t *testing.T) {
 			cfg, _ := writeServiceConfig(t, deployConfig)
 			routes := map[string]string{
-				listRoute:              `[{"version":1},{"version":3},{"version":2}]`,
+				listRoute:              `[{"version":1,"status":"expired"},{"version":3,"status":"done"},{"version":2,"status":"expired"}]`,
 				"POST " + rollbackPath: `{"version":4,"changed":["A"]}`,
 			}
 			if tc.EnvAPI {
@@ -132,7 +136,7 @@ func TestRollback(t *testing.T) {
 			}
 			client, requests := newFakeAPI(t, routes)
 			var out, notes bytes.Buffer
-			err := rollbackLatestDeployment(client, cfg, 1, tc.Env, &out, &notes)
+			err := rollbackLatestDeployment(client, cfg, rollbackOptions{1, tc.Env, tc.Settings}, &out, &notes)
 			rollbacks := requestsTo(*requests, http.MethodPost, rollbackPath)
 			if tc.WantErr != "" {
 				if err == nil || !strings.Contains(err.Error(), tc.WantErr) {
@@ -154,6 +158,59 @@ func TestRollback(t *testing.T) {
 			}
 			if !strings.Contains(notes.String(), "version 2 differs from the current one in A") {
 				t.Errorf("notes %q do not name the changed variable", notes.String())
+			}
+		})
+	}
+}
+
+func TestRollbackTarget(t *testing.T) {
+	failed := api.Deployment{Status: "failed", Failure: &api.DeploymentFailure{Kind: "health", Message: "not ready within 300s"}}
+	d := func(version int64, status string) api.Deployment {
+		return api.Deployment{Version: version, Status: status}
+	}
+	withVersion := func(d api.Deployment, version int64) api.Deployment {
+		d.Version = version
+		return d
+	}
+	for _, tc := range []struct {
+		Name        string
+		Deployments []api.Deployment
+		Delta       int
+		Want        int64
+		WantErr     string
+	}{
+		{"Previous", []api.Deployment{d(1, "expired"), d(2, "done")}, 1, 1, ""},
+		{"SkipsFailed", []api.Deployment{d(1, "expired"), withVersion(failed, 2), d(3, "done")}, 1, 1, ""},
+		// A failed deploy above the live one is not the live one.
+		{"FailedAboveLive", []api.Deployment{d(1, "expired"), d(2, "done"), withVersion(failed, 3)}, 1, 1, ""},
+		{"InFlightAboveLive", []api.Deployment{d(1, "expired"), d(2, "done"), d(3, "scheduled"), d(4, "waiting")}, 1, 1, ""},
+		// An old server's failure without a kind, and a deployment that never left scheduled.
+		{"SkipsErrors", []api.Deployment{
+			d(1, "expired"),
+			{Version: 2, Status: "failed", Error: "crashed"},
+			{Version: 3, Status: "expired", Error: "failedToSchedule"},
+			d(4, "done"),
+		}, 1, 1, ""},
+		{"DeltaCountsEligible", []api.Deployment{d(1, "expired"), withVersion(failed, 2), d(3, "expired"), withVersion(failed, 4), d(5, "done")}, 2, 1, ""},
+		{"Unsorted", []api.Deployment{d(5, "done"), d(3, "expired"), d(4, "expired")}, 2, 3, ""},
+		{"NothingEarlier", []api.Deployment{withVersion(failed, 1), d(2, "done")}, 1, 0, "found 0 earlier deployments"},
+		{"DeltaTooLarge", []api.Deployment{d(1, "expired"), d(2, "done")}, 2, 0, "--delta 2 needs more"},
+		{"NothingLive", []api.Deployment{d(1, "expired"), withVersion(failed, 2)}, 1, 0, "no deployment is live"},
+		{"DeltaZero", []api.Deployment{d(1, "expired"), d(2, "done")}, 0, 0, "--delta must be at least 1"},
+	} {
+		t.Run(tc.Name, func(t *testing.T) {
+			got, err := rollbackTarget(tc.Deployments, tc.Delta)
+			if tc.WantErr != "" {
+				if err == nil || !strings.Contains(err.Error(), tc.WantErr) {
+					t.Fatalf("got %d, %v, want an error containing %q", got, err, tc.WantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("rollbackTarget: %v", err)
+			}
+			if got != tc.Want {
+				t.Errorf("target = %d, want %d", got, tc.Want)
 			}
 		})
 	}
