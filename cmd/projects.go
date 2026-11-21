@@ -6,6 +6,7 @@ import (
 	"os"
 	"strings"
 	"text/tabwriter"
+	"time"
 
 	"github.com/juju/ansiterm"
 	"github.com/spf13/cobra"
@@ -231,7 +232,7 @@ var (
 
 	whoamiCmd = &cobra.Command{
 		Use:   "whoami",
-		Short: "Show the currently authenticated user.",
+		Short: "Show the current user and what the token in use grants.",
 		Args:  cobra.NoArgs,
 		Run: runAndHandle(func(cmd *cobra.Command, args []string) error {
 			client, err := globalConfiguration.APIClient()
@@ -242,15 +243,26 @@ var (
 			if err != nil {
 				return err
 			}
-			return result(info, func(w io.Writer) error {
-				tw := ansiterm.NewTabWriter(w, 6, 0, 1, ' ', 0)
-				fmt.Fprintf(tw, "User:\t%s\n", info.Name)
-				fmt.Fprintf(tw, "Projects:\t%s\n", strings.Join(info.Projects, ", "))
-				return tw.Flush()
-			})
+			return result(info, func(w io.Writer) error { return printUserInfo(w, info, time.Now()) })
 		}),
 	}
 )
+
+// printUserInfo writes the user and, where the server reports it, the grant
+// of the token in use.
+func printUserInfo(w io.Writer, info *api.UserInfo, now time.Time) error {
+	tw := ansiterm.NewTabWriter(w, 6, 0, 1, ' ', 0)
+	fmt.Fprintf(tw, "User:\t%s\n", info.Name)
+	if info.Principal != "" {
+		fmt.Fprintf(tw, "Principal:\t%s\n", info.Principal)
+	}
+	fmt.Fprintf(tw, "Projects:\t%s\n", strings.Join(info.Projects, ", "))
+	if info.Token != nil {
+		fmt.Fprintf(tw, "Token:\t%s\n", orDash(info.Token.Name))
+		writeRows(tw, tokenRows(*info.Token, now))
+	}
+	return tw.Flush()
+}
 
 func authModifyWithState(state string) func(cmd *cobra.Command, args []string) error {
 	return func(cmd *cobra.Command, args []string) error {

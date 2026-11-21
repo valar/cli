@@ -407,6 +407,52 @@ valar builds status [--exit] [buildid]
 valar whoami
 ```
 
+Prints the user, their projects and, on platforms that report it, what the token in use grants: its kind, binding, scopes, creation, expiry, last use and the token that created it.
+
+### Tokens
+
+These commands need a newer Valar platform; against an older one they fail with "the server has no token API".
+
+A token created with `valar token create` acts as you. It is a child of the token that creates it: it expires no later than that token and is revoked with it. Only a token created in the console or with authctl, with full access and no project binding, can create tokens.
+
+#### Create a token
+
+```bash
+valar token create [--project project] [--service service] [--scopes read,deploy] [--ttl 90d] name
+```
+
+`--project` binds the token to one project and `--service` to one service of it. `--scopes` limits it to some of `read`, `deploy`, `invoke`, `kv` and `all` (the default). `--ttl` takes days (`30d`) or a duration (`12h`); the default is 90 days and the maximum 365. A token for CI that pushes and deploys one project:
+
+```bash
+valar token create ci --project acme --scopes read,deploy
+```
+
+The token goes to stdout and the rest to stderr, so `TOKEN=$(valar token create ci)` captures only the token; with `--json` it is the `value` field. Valar shows it once.
+
+#### List tokens
+
+```bash
+valar token list [--project project]
+```
+
+Lists your tokens, including revoked and expired ones for 30 days. With `--project`, it lists every token bound to the project, whoever owns it, and needs permission to manage the project.
+
+#### Revoke a token
+
+```bash
+valar token revoke [--project project] id
+```
+
+Revokes the token with the ID that `valar token list` shows, and the tokens it created. With `--project`, it revokes a token from the project's list.
+
+### Audit log
+
+```bash
+valar audit [--project project] [--limit n] [--before id]
+```
+
+Shows the active project's audit log, newest first: an attempt row before each change made through the API and a result row after it, with the token, client and source address, and per-minute counts of refused requests. It needs permission to manage the project and a newer Valar platform. A page holds `--limit` rows (100 by default, at most 500); when a page is full, the command for the next one is printed to stderr.
+
 ### Permissions
 
 #### View permissions
