@@ -25,7 +25,8 @@ func TestVerifyToken(t *testing.T) {
 			Name: "ExpiresSoon", Info: `{"name":"alice","projects":[],"token":{"kind":"user","scopes":["all"],"expiresAt":"2026-11-24T12:00:00Z"}}`,
 			WantWarn: "Warning: your Valar token expires in 3 days, at 2026-11-24 12:00 UTC.",
 		},
-		{Name: "NoExpiry", Info: `{"name":"alice","projects":[],"token":{"kind":"legacy-user","scopes":["all"]}}`},
+		{Name: "NoExpiry", Info: `{"name":"alice","projects":[],"token":{"kind":"user","scopes":["all"]}}`},
+		{Name: "UnknownKind", Info: `{"name":"alice","projects":[],"token":{"kind":"future-kind","scopes":["all"],"expiresAt":"2027-01-20T12:00:00Z"}}`},
 		{
 			Name: "Agent", Info: `{"name":"alice","projects":[],"token":{"kind":"agent","project":"acme","scopes":["read"]}}`,
 			WantKind: kindNotAllowed, WantErr: "this is an agent token",

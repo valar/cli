@@ -28,7 +28,7 @@ var auditCmd = &cobra.Command{
 The log lists the changes made to the project through the API, each with the
 token, client and source address that made it: an attempt row before the
 change and a result row after it. Count rows sum a minute's refused requests
-and requests by legacy project tokens.
+and requests by agent and workload tokens.
 
 It reads the active project unless --project names another, and needs
 permission to manage the project. A page holds --limit rows, at most 500;

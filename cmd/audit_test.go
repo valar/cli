@@ -11,10 +11,11 @@ import (
 	"github.com/valar/cli/api"
 )
 
+// Row 1200's token ID is in a format the CLI does not know, so it is shown whole.
 const auditPage = `[{"id":1201,"at":"2026-11-21T10:00:01Z","kind":"result","attemptId":1200,"principal":"human::alice","tokenId":"` + ciTokenID +
 	`","client":"valar-cli/4.9.0","sourceIp":"192.0.2.1","service":"web","operation":"deploys.submit","target":"deployment=7","status":200,"count":0},` +
-	`{"id":1200,"at":"2026-11-21T10:00:00Z","kind":"attempt","principal":"human::alice","tokenId":"legacy-project","operation":"tokens.create","count":0},` +
-	`{"id":1190,"at":"2026-11-21T09:59:00Z","kind":"count","principal":"service::acme","operation":"env.patch","status":403,"count":3}]`
+	`{"id":1200,"at":"2026-11-21T10:00:00Z","kind":"attempt","principal":"human::alice","tokenId":"future-id","operation":"tokens.create","count":0},` +
+	`{"id":1190,"at":"2026-11-21T09:59:00Z","kind":"count","principal":"service::acme/web","operation":"env.patch","status":403,"count":3}]`
 
 func TestListAudit(t *testing.T) {
 	for _, tc := range []struct {
@@ -36,8 +37,8 @@ func TestListAudit(t *testing.T) {
 			want := []string{
 				"ID TIME KIND PRINCIPAL TOKEN OPERATION SERVICE TARGET STATUS SOURCE CLIENT",
 				"1201 <time> result human::alice fedcba98 deploys.submit web deployment=7 200 192.0.2.1 valar-cli/4.9.0",
-				"1200 <time> attempt human::alice legacy-project tokens.create - - - - -",
-				"1190 <time> count (3) service::acme - env.patch - - 403 - -",
+				"1200 <time> attempt human::alice future-id tokens.create - - - - -",
+				"1190 <time> count (3) service::acme/web - env.patch - - 403 - -",
 			}
 			if len(got) != len(want) {
 				t.Fatalf("table\n got %q\nwant %q", got, want)
