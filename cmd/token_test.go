@@ -371,11 +371,6 @@ func TestCreateToken_Refused(t *testing.T) {
 			map[string]string{"POST /tokens": `{"error":"only tokens minted in the console or with authctl can mint tokens"}`},
 			kindNotAllowed, "Forbidden: only tokens minted in the console or with authctl can mint tokens",
 		},
-		{
-			"Legacy", http.StatusForbidden,
-			map[string]string{"POST /tokens": `{"error":"legacy tokens cannot mint tokens; create one in the console or with authctl"}`},
-			kindNotAllowed, "Forbidden: legacy tokens cannot mint tokens",
-		},
 		{"Taken", http.StatusConflict, map[string]string{"POST /tokens": `{"error":"a live token with that name exists"}`}, kindConflict, "a live token with that name exists"},
 		{"BadBinding", http.StatusBadRequest, map[string]string{"POST /tokens": `{"error":"service is not a service name"}`}, kindInvalid, "service is not a service name"},
 	} {
@@ -404,7 +399,7 @@ func TestListTokens(t *testing.T) {
 		own       = `[{"id":"` + rootTokenID + `","kind":"user","name":"laptop","scopes":["all"],"createdAt":"2026-11-01T12:00:00Z","expiresAt":"2027-01-30T12:00:00Z","lastUsed":"2026-11-21T11:59:00Z"},` +
 			`{"id":"` + ciTokenID + `","kind":"user","name":"ci","project":"acme","scopes":["deploy","read"],"parent":"` + rootTokenID + `","expiresAt":"2027-01-30T12:00:00Z"},` +
 			`{"id":"` + oldID + `","kind":"user","name":"old","service":"web","project":"acme","scopes":["read"],"expiresAt":"2027-01-30T12:00:00Z","revokedAt":"2026-11-20T12:00:00Z"},` +
-			`{"id":"` + expiredID + `","kind":"legacy-user","name":"cli","scopes":["all"],"expiresAt":"2026-11-21T11:00:00Z"}]`
+			`{"id":"` + expiredID + `","kind":"future-kind","name":"cli","scopes":["all"],"expiresAt":"2026-11-21T11:00:00Z"}]`
 		project = `[{"id":"` + ciTokenID + `","kind":"user","name":"ci","owner":"alice","project":"acme","scopes":["deploy","read"],"parent":"` + rootTokenID + `"}]`
 	)
 	routes := map[string]string{"GET /tokens": own, "GET /projects/acme/tokens": project}
@@ -420,7 +415,7 @@ func TestListTokens(t *testing.T) {
 				rootTokenID + " laptop user - all - 2 months from now 1 minute ago live",
 				ciTokenID + " ci user acme deploy,read laptop 2 months from now never live",
 				oldID + " old user acme/web read - 2 months from now never revoked",
-				expiredID + " cli legacy-user - all - 1 hour ago never expired",
+				expiredID + " cli future-kind - all - 1 hour ago never expired",
 			},
 		},
 		{
@@ -568,11 +563,11 @@ func TestPrintUserInfo(t *testing.T) {
 			"EarlierGrant",
 			api.UserInfo{
 				Name: "alice", Projects: []string{"acme"}, Principal: "human::alice",
-				Token: &api.Token{ID: rootTokenID, Kind: "legacy-user", Scopes: []string{"all"}},
+				Token: &api.Token{ID: rootTokenID, Kind: "user", Scopes: []string{"all"}},
 			},
 			[]string{
 				"User: alice", "Principal: human::alice", "Projects: acme", "Token: -", "ID: " + rootTokenID,
-				"Kind: legacy-user", "Binding: any project", "Scopes: all", "Expires: never",
+				"Kind: user", "Binding: any project", "Scopes: all", "Expires: never",
 			},
 		},
 		{"NoGrant", api.UserInfo{Name: "alice", Projects: []string{"acme"}}, []string{"User: alice", "Projects: acme"}},
